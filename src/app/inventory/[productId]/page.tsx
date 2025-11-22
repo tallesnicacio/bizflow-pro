@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Plus, ArrowLeft, Loader2, Ruler, Layers } from 'lucide-react';
+import { Plus, ArrowLeft, Loader2, Ruler, Layers, Lock } from 'lucide-react';
 import { getProduct, createSlab } from '@/lib/inventory-slab-actions';
+import { createHold } from '@/lib/hold-actions';
+import { getContacts } from '@/lib/crm-actions';
 import { Modal } from '@/components/Modal';
 import { cn } from '@/lib/utils';
 
@@ -16,7 +18,10 @@ export default function ProductDetailsPage() {
 
     const [isLoading, setIsLoading] = useState(true);
     const [product, setProduct] = useState<any>(null);
+    const [contacts, setContacts] = useState<any[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
+    const [selectedSlabForHold, setSelectedSlabForHold] = useState<any>(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -27,6 +32,14 @@ export default function ProductDetailsPage() {
         finish: 'Polished'
     });
 
+    // Hold Form State
+    const [holdData, setHoldData] = useState({
+        contactId: '',
+        reason: '',
+        notes: '',
+        expirationDays: 7,
+    });
+
     useEffect(() => {
         loadData();
     }, [productId]);
@@ -34,10 +47,53 @@ export default function ProductDetailsPage() {
     async function loadData() {
         setIsLoading(true);
         try {
-            const data = await getProduct(productId);
-            setProduct(data);
+            const [productData, contactsData] = await Promise.all([
+                getProduct(productId),
+                getContacts(TENANT_ID),
+            ]);
+            setProduct(productData);
+            setContacts(contactsData);
         } catch (error) {
             console.error('Failed to load product', error);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    function openHoldModal(slab: any) {
+        setSelectedSlabForHold(slab);
+        setHoldData({
+            contactId: '',
+            reason: '',
+            notes: '',
+            expirationDays: 7,
+        });
+        setIsHoldModalOpen(true);
+    }
+
+    async function handleCreateHold(e: React.FormEvent) {
+        e.preventDefault();
+        if (!selectedSlabForHold) return;
+
+        setIsLoading(true);
+        try {
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + holdData.expirationDays);
+
+            await createHold({
+                slabId: selectedSlabForHold.id,
+                contactId: holdData.contactId || undefined,
+                tenantId: TENANT_ID,
+                reason: holdData.reason || undefined,
+                notes: holdData.notes || undefined,
+                expiresAt,
+            });
+
+            setIsHoldModalOpen(false);
+            setSelectedSlabForHold(null);
+            await loadData();
+        } catch (error: any) {
+            alert(error.message || 'Erro ao criar reserva');
         } finally {
             setIsLoading(false);
         }
@@ -149,6 +205,7 @@ export default function ProductDetailsPage() {
                                 <th className="text-left p-4 font-medium text-muted-foreground">Espessura</th>
                                 <th className="text-left p-4 font-medium text-muted-foreground">Acabamento</th>
                                 <th className="text-left p-4 font-medium text-muted-foreground">Status</th>
+                                <th className="text-right p-4 font-medium text-muted-foreground">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -161,16 +218,39 @@ export default function ProductDetailsPage() {
                                     <td className="p-4">
                                         <span className={cn(
                                             "px-2 py-1 rounded-full text-xs font-medium",
-                                            slab.status === 'AVAILABLE' ? "bg-emerald-500/20 text-emerald-400" : "bg-yellow-500/20 text-yellow-400"
+                                            slab.status === 'AVAILABLE' ? "bg-emerald-500/20 text-emerald-400" :
+                                            slab.status === 'HOLD' ? "bg-blue-500/20 text-blue-400" :
+                                            "bg-yellow-500/20 text-yellow-400"
                                         )}>
-                                            {slab.status}
+                                            {slab.status === 'AVAILABLE' ? 'Disponível' :
+                                             slab.status === 'HOLD' ? 'Reservada' :
+                                             slab.status === 'SOLD' ? 'Vendida' : slab.status}
                                         </span>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        {slab.status === 'AVAILABLE' && (
+                                            <button
+                                                onClick={() => openHoldModal(slab)}
+                                                className="inline-flex items-center gap-1 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                                            >
+                                                <Lock size={14} />
+                                                Reservar
+                                            </button>
+                                        )}
+                                        {slab.status === 'HOLD' && (
+                                            <button
+                                                onClick={() => router.push('/holds')}
+                                                className="px-3 py-1 bg-muted hover:bg-muted/80 rounded text-sm"
+                                            >
+                                                Ver Reserva
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
                             {(!product.slabs || product.slabs.length === 0) && (
                                 <tr>
-                                    <td colSpan={5} className="p-12 text-center text-muted-foreground">
+                                    <td colSpan={6} className="p-12 text-center text-muted-foreground">
                                         Nenhuma chapa cadastrada.
                                     </td>
                                 </tr>
@@ -262,6 +342,99 @@ export default function ProductDetailsPage() {
                             className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all disabled:opacity-50"
                         >
                             {isLoading ? 'Salvando...' : 'Salvar Chapa'}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Hold Modal */}
+            <Modal
+                isOpen={isHoldModalOpen}
+                onClose={() => {
+                    setIsHoldModalOpen(false);
+                    setSelectedSlabForHold(null);
+                }}
+                title="Reservar Chapa"
+            >
+                <form onSubmit={handleCreateHold} className="space-y-4">
+                    {selectedSlabForHold && (
+                        <div className="p-4 bg-muted/50 rounded-lg mb-4">
+                            <p className="text-sm text-muted-foreground">Chapa selecionada:</p>
+                            <p className="font-mono font-bold">{selectedSlabForHold.serialNumber}</p>
+                            <p className="text-sm">
+                                {Number(selectedSlabForHold.length)} x {Number(selectedSlabForHold.height)} in - {selectedSlabForHold.finish}
+                            </p>
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Cliente (opcional)</label>
+                        <select
+                            className="w-full bg-background border border-input rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+                            value={holdData.contactId}
+                            onChange={e => setHoldData({ ...holdData, contactId: e.target.value })}
+                        >
+                            <option value="">Selecione um cliente</option>
+                            {contacts.map((contact) => (
+                                <option key={contact.id} value={contact.id}>
+                                    {contact.name} - {contact.email}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Motivo da Reserva</label>
+                        <input
+                            className="w-full bg-background border border-input rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+                            value={holdData.reason}
+                            onChange={e => setHoldData({ ...holdData, reason: e.target.value })}
+                            placeholder="Ex: Aguardando aprovação do projeto"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Prazo de Expiração</label>
+                        <select
+                            className="w-full bg-background border border-input rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+                            value={holdData.expirationDays}
+                            onChange={e => setHoldData({ ...holdData, expirationDays: parseInt(e.target.value) })}
+                        >
+                            <option value={3}>3 dias</option>
+                            <option value={7}>7 dias</option>
+                            <option value={14}>14 dias</option>
+                            <option value={30}>30 dias</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Observações</label>
+                        <textarea
+                            className="w-full bg-background border border-input rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+                            value={holdData.notes}
+                            onChange={e => setHoldData({ ...holdData, notes: e.target.value })}
+                            placeholder="Notas adicionais..."
+                            rows={3}
+                        />
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsHoldModalOpen(false);
+                                setSelectedSlabForHold(null);
+                            }}
+                            className="px-6 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50"
+                        >
+                            {isLoading ? 'Reservando...' : 'Confirmar Reserva'}
                         </button>
                     </div>
                 </form>

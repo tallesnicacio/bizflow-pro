@@ -115,12 +115,24 @@ export async function createOpportunity(data: {
     }
 }
 
-export async function updateOpportunityStage(opportunityId: string, stageId: string) {
+export async function updateOpportunityStage(opportunityId: string, stageId: string, oldStageId?: string) {
     try {
         const opportunity = await prisma.opportunity.update({
             where: { id: opportunityId },
             data: { stageId },
         });
+
+        // Trigger workflow automation
+        if (oldStageId) {
+            const { triggerPipelineStageChanged } = await import('./workflow-triggers');
+            await triggerPipelineStageChanged({
+                opportunityId,
+                oldStageId,
+                newStageId: stageId,
+                tenantId: opportunity.tenantId,
+            }).catch(err => console.error('Workflow trigger failed:', err));
+        }
+
         revalidatePath('/crm/pipelines');
 
         // Convert Decimal to number for client serialization

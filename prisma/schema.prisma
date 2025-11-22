@@ -18,32 +18,43 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users     User[]
-  products  Product[]
-  orders    Order[]
-  contacts  Contact[]
-  campaigns Campaign[]
-  transactions Transaction[]
-  pipelines    Pipeline[]
-  opportunities Opportunity[]
-  slabs        Slab[]
-  quotes       Quote[]
-  conversations Conversation[]
-  jobs         Job[]
-  calendars    Calendar[]
-  appointments Appointment[]
+  users          User[]
+  products       Product[]
+  orders         Order[]
+  contacts       Contact[]
+  campaigns      Campaign[]
+  transactions   Transaction[]
+  pipelines      Pipeline[]
+  opportunities  Opportunity[]
+  slabs          Slab[]
+  quotes         Quote[]
+  conversations  Conversation[]
+  jobs           Job[]
+  calendars      Calendar[]
+  appointments   Appointment[]
+  workflows      Workflow[]
+  forms          Form[]
+  funnels        Funnel[]
+  holds          Hold[]
+  suppliers      Supplier[]
+  purchaseOrders PurchaseOrder[]
+  containers     Container[]
+  tasks          Task[]
+  tags           Tag[]
 }
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password  String   // Hashed
+  password  String // Hashed
   name      String?
   role      String   @default("USER") // ADMIN, USER, MANAGER
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  assignedTasks Task[]
 }
 
 // ERP - Inventory & Sales
@@ -67,19 +78,19 @@ model Product {
 }
 
 model Order {
-  id          String      @id @default(cuid())
-  customerName String?    // Simple string for now, or link to Contact
-  total       Decimal
-  status      String      @default("PENDING") // PENDING, COMPLETED, CANCELLED
-  tenantId    String
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id           String   @id @default(cuid())
+  customerName String? // Simple string for now, or link to Contact
+  total        Decimal
+  status       String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  items       OrderItem[]
-  contactId   String?
-  contact     Contact?    @relation(fields: [contactId], references: [id])
-  jobs        Job[]
+  items     OrderItem[]
+  contactId String?
+  contact   Contact?    @relation(fields: [contactId], references: [id])
+  jobs      Job[]
 }
 
 model OrderItem {
@@ -105,19 +116,59 @@ model Contact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  orders    Order[]
+  orders        Order[]
   opportunities Opportunity[]
   quotes        Quote[]
   conversations Conversation[]
   appointments  Appointment[]
+  holds         Hold[]
+  tasks         Task[]
+  tags          Tag[]
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      String   @default("TODO") // TODO, IN_PROGRESS, DONE
+  priority    String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id])
+  
+  assignedToId String?
+  assignedTo   User?    @relation(fields: [assignedToId], references: [id])
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String
+  color     String?  @default("#94a3b8") // Default gray
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  contacts  Contact[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
 }
 
 model Campaign {
   id          String   @id @default(cuid())
   name        String
   status      String   @default("DRAFT") // DRAFT, ACTIVE, COMPLETED
-  triggerRule String   // JSON or string describing the trigger (e.g. "STOCK_LOW", "NEW_ORDER")
-  content     String   // Email body or template ID
+  triggerRule String // JSON or string describing the trigger (e.g. "STOCK_LOW", "NEW_ORDER")
+  content     String // Email body or template ID
   tenantId    String
   tenant      Tenant   @relation(fields: [tenantId], references: [id])
   createdAt   DateTime @default(now())
@@ -129,7 +180,7 @@ model Transaction {
   id          String   @id @default(cuid())
   description String
   amount      Decimal
-  type        String   // INCOME, EXPENSE
+  type        String // INCOME, EXPENSE
   category    String
   date        DateTime @default(now())
   tenantId    String
@@ -190,51 +241,75 @@ model Slab {
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  holds Hold[]
+}
+
+// ERP - Holds & Allocations
+model Hold {
+  id        String   @id @default(cuid())
+  slabId    String
+  slab      Slab     @relation(fields: [slabId], references: [id], onDelete: Cascade)
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  reason      String? // Reason for the hold
+  notes       String?
+  status      String    @default("ACTIVE") // ACTIVE, RELEASED, EXPIRED, CONVERTED
+  expiresAt   DateTime // When the hold expires
+  releasedAt  DateTime?
+  convertedAt DateTime? // When converted to sale
+
+  createdBy String? // User who created the hold
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ERP - Quoting
 model Quote {
-  id          String      @id @default(cuid())
-  number      String      // e.g. Q-1001
+  id           String    @id @default(cuid())
+  number       String // e.g. Q-1001
   customerName String?
-  total       Decimal
-  status      String      @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED
-  validUntil  DateTime?
-  tenantId    String
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  contactId   String?
-  contact     Contact?    @relation(fields: [contactId], references: [id])
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  total        Decimal
+  status       String    @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED
+  validUntil   DateTime?
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  contactId    String?
+  contact      Contact?  @relation(fields: [contactId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  items       QuoteItem[]
+  items QuoteItem[]
 }
 
 model QuoteItem {
-  id        String  @id @default(cuid())
-  quoteId   String
-  quote     Quote   @relation(fields: [quoteId], references: [id])
-  productId String?
-  product   Product? @relation(fields: [productId], references: [id])
+  id          String   @id @default(cuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id])
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
   description String // Can be custom or product name
-  quantity  Decimal
-  unitPrice Decimal
-  total     Decimal
+  quantity    Decimal
+  unitPrice   Decimal
+  total       Decimal
 }
 
 // CRM - Unified Conversations
 model Conversation {
-  id        String    @id @default(cuid())
-  contactId String
-  contact   Contact   @relation(fields: [contactId], references: [id])
-  tenantId  String
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
-  channel   String    // EMAIL, SMS, WHATSAPP
+  id            String   @id @default(cuid())
+  contactId     String
+  contact       Contact  @relation(fields: [contactId], references: [id])
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  channel       String // EMAIL, SMS, WHATSAPP
   lastMessageAt DateTime @default(now())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  messages  Message[]
+  messages Message[]
 }
 
 model Message {
@@ -242,61 +317,264 @@ model Message {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   content        String
-  direction      String       // INBOUND, OUTBOUND
+  direction      String // INBOUND, OUTBOUND
   status         String       @default("SENT") // SENT, DELIVERED, READ, FAILED
   createdAt      DateTime     @default(now())
 }
 
 // ERP - Job Management (Fabrication)
 model Job {
-  id          String    @id @default(cuid())
-  name        String
-  orderId     String?
-  order       Order?    @relation(fields: [orderId], references: [id])
-  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, ON_HOLD
-  startDate   DateTime?
-  endDate     DateTime?
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  name      String
+  orderId   String?
+  order     Order?    @relation(fields: [orderId], references: [id])
+  status    String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, ON_HOLD
+  startDate DateTime?
+  endDate   DateTime?
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  stages      JobStage[]
+  stages JobStage[]
 }
 
 model JobStage {
-  id        String   @id @default(cuid())
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id])
-  name      String   // e.g. Cutting, Polishing, Installation
-  status    String   @default("PENDING")
+  id          String    @id @default(cuid())
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id])
+  name        String // e.g. Cutting, Polishing, Installation
+  status      String    @default("PENDING")
   completedAt DateTime?
-  order     Int
+  order       Int
 }
 
 // CRM - Calendars & Appointments
 model Calendar {
-  id        String        @id @default(cuid())
-  name      String
-  tenantId  String
-  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  id           String        @id @default(cuid())
+  name         String
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
   appointments Appointment[]
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model Appointment {
-  id          String    @id @default(cuid())
-  title       String
-  startTime   DateTime
-  endTime     DateTime
-  calendarId  String
-  calendar    Calendar  @relation(fields: [calendarId], references: [id])
-  contactId   String?
-  contact     Contact?  @relation(fields: [contactId], references: [id])
+  id         String   @id @default(cuid())
+  title      String
+  startTime  DateTime
+  endTime    DateTime
+  calendarId String
+  calendar   Calendar @relation(fields: [calendarId], references: [id])
+  contactId  String?
+  contact    Contact? @relation(fields: [contactId], references: [id])
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  status     String   @default("SCHEDULED") // SCHEDULED, CANCELLED, COMPLETED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Automation Workflows
+model Workflow {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean @default(true)
   tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  status      String    @default("SCHEDULED") // SCHEDULED, CANCELLED, COMPLETED
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  tenant      Tenant  @relation(fields: [tenantId], references: [id])
+
+  trigger WorkflowTrigger?
+  actions WorkflowAction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WorkflowTrigger {
+  id         String   @id @default(cuid())
+  workflowId String   @unique
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  type   String // FORM_SUBMITTED, TAG_ADDED, PIPELINE_STAGE_CHANGED, CONTACT_CREATED
+  config Json // Trigger-specific configuration
+
+  createdAt DateTime @default(now())
+}
+
+model WorkflowAction {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  order  Int // Execution order
+  type   String // SEND_EMAIL, SEND_SMS, CREATE_TASK, ADD_TAG, UPDATE_FIELD
+  config Json // Action-specific configuration
+
+  createdAt DateTime @default(now())
+}
+
+// Funnels & Forms (GoHighLevel-style)
+model Form {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  slug        String // URL-friendly identifier
+  isActive    Boolean @default(true)
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id])
+
+  fields      FormField[]
+  submissions FormSubmission[]
+
+  // Styling options
+  submitButtonText String  @default("Submit")
+  successMessage   String  @default("Thank you for your submission!")
+  redirectUrl      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+}
+
+model FormField {
+  id     String @id @default(cuid())
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  label       String
+  type        String // TEXT, EMAIL, PHONE, TEXTAREA, SELECT, CHECKBOX, RADIO, DATE, NUMBER
+  placeholder String?
+  required    Boolean @default(false)
+  options     Json? // For SELECT, RADIO, CHECKBOX - array of options
+  order       Int
+
+  // Field mapping to Contact
+  mapToContact String? // name, email, phone, or null
+
+  createdAt DateTime @default(now())
+}
+
+model FormSubmission {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  data      Json // Submitted field values
+  contactId String? // Created/updated contact
+  createdAt DateTime @default(now())
+}
+
+model Funnel {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  slug        String // URL-friendly identifier
+  isActive    Boolean @default(true)
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id])
+
+  pages FunnelPage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+}
+
+model FunnelPage {
+  id       String @id @default(cuid())
+  funnelId String
+  funnel   Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  name    String
+  slug    String // Page path within funnel
+  order   Int
+  content Json // Page builder content (blocks/sections)
+  formId  String? // Optional embedded form
+
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ERP - Purchasing & Containers
+model Supplier {
+  id       String  @id @default(cuid())
+  name     String
+  code     String? // e.g. SUP-001
+  email    String?
+  phone    String?
+  address  String?
+  country  String?
+  currency String  @default("USD")
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id])
+
+  purchaseOrders PurchaseOrder[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model PurchaseOrder {
+  id          String   @id @default(cuid())
+  number      String // e.g. PO-2024-001
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  status      String   @default("DRAFT") // DRAFT, SENT, CONFIRMED, PARTIAL, COMPLETED, CANCELLED
+  totalAmount Decimal
+  currency    String   @default("USD")
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  items       PurchaseOrderItem[]
+  containerId String?
+  container   Container?          @relation(fields: [containerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  description String // e.g. "Taj Mahal Block"
+  quantity    Int
+  unitPrice   Decimal
+  totalPrice  Decimal
+
+  // Optional link to created inventory items after receiving
+  received Boolean @default(false)
+}
+
+model Container {
+  id     String @id @default(cuid())
+  number String // Container Number e.g. MSCU1234567
+  status String @default("PLANNED") // PLANNED, ON_WATER, AT_PORT, CUSTOMS, DELIVERED, RECEIVED
+
+  // Dates
+  etd         DateTime? // Estimated Time of Departure
+  eta         DateTime? // Estimated Time of Arrival
+  arrivalDate DateTime? // Actual Arrival
+
+  // Costs for Landed Cost Calculation
+  freightCost     Decimal @default(0)
+  customsCost     Decimal @default(0)
+  truckingCost    Decimal @default(0)
+  otherCosts      Decimal @default(0)
+  totalLandedCost Decimal @default(0) // Calculated
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  purchaseOrders PurchaseOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

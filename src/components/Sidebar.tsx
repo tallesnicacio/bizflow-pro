@@ -1,70 +1,138 @@
-import Link from 'next/link';
-import { LayoutDashboard, Package, ShoppingCart, DollarSign, Users, Settings, BarChart3, KanbanSquare, MessageSquare, FileText, Hammer, Calendar } from 'lucide-react';
-import { cn } from '@/lib/utils';
+'use client';
 
-const navItems = [
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { logout } from '@/lib/auth-actions';
+import {
+    LayoutDashboard,
+    MessageSquare,
+    Calendar,
+    Users,
+    Target, // Opportunities
+    CreditCard, // Payments
+    Megaphone, // Marketing
+    Workflow, // Automation
+    Globe, // Sites
+    GraduationCap, // Memberships
+    Image, // Media
+    Star, // Reputation
+    BarChart3, // Reporting
+    Rocket, // Launchpad
+    Box, // Inventory
+    Truck, // Purchasing
+    Hammer, // Jobs
+    LogOut,
+    Lock
+} from 'lucide-react';
+
+const MAIN_MENU = [
+    { name: 'Launchpad', href: '/launchpad', icon: Rocket },
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Inventário', href: '/inventory', icon: Package },
-    { name: 'Vendas', href: '/orders', icon: ShoppingCart },
-    { name: 'Orçamentos', href: '/orders/quotes', icon: FileText },
-    { name: 'Produção', href: '/jobs', icon: Hammer },
-    { name: 'Financeiro', href: '/finance', icon: DollarSign },
-    { name: 'Contatos', href: '/crm', icon: Users },
-    { name: 'Agenda', href: '/crm/calendar', icon: Calendar },
-    { name: 'Conversas', href: '/crm/conversations', icon: MessageSquare },
-    { name: 'Pipelines', href: '/crm/pipelines', icon: KanbanSquare },
-    { name: 'Relatórios', href: '/reports', icon: BarChart3 },
-    { name: 'Configurações', href: '/settings', icon: Settings },
+    { name: 'Conversations', href: '/crm/conversations', icon: MessageSquare },
+    { name: 'Calendars', href: '/crm/calendar', icon: Calendar },
+    { name: 'Contacts', href: '/crm', icon: Users },
+    { name: 'Opportunities', href: '/crm/pipelines', icon: Target },
+    { name: 'Payments', href: '/finance', icon: CreditCard },
+    { name: 'Marketing', href: '/marketing', icon: Megaphone },
+    { name: 'Automation', href: '/automation', icon: Workflow },
+    { name: 'Sites', href: '/funnels', icon: Globe },
+    { name: 'Memberships', href: '/memberships', icon: GraduationCap },
+    { name: 'Media Storage', href: '/media', icon: Image },
+    { name: 'Reputation', href: '/reputation', icon: Star },
+    { name: 'Reporting', href: '/reports', icon: BarChart3 },
+];
+
+const OPERATIONS_MENU = [
+    { name: 'Inventory', href: '/inventory', icon: Box },
+    { name: 'Purchasing', href: '/purchasing', icon: Truck },
+    { name: 'Jobs', href: '/jobs', icon: Hammer },
+    { name: 'Orders', href: '/orders', icon: CreditCard },
 ];
 
 export function Sidebar() {
+    const pathname = usePathname();
+
     return (
-        <aside className="w-64 h-screen fixed left-0 top-0 p-4 border-r border-border bg-card/30 backdrop-blur-xl flex flex-col">
-            {/* Logo */}
-            <div className="flex items-center gap-3 mb-8 px-2">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                    <span className="text-white font-bold text-xl">B</span>
-                </div>
-                <div>
-                    <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                        BizFlow Pro
-                    </h1>
-                    <p className="text-xs text-muted-foreground">Sistema de Gestão</p>
-                </div>
+        <div className="w-64 bg-card border-r border-border h-screen flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="p-6 border-b border-border">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
+                    BizFlow Pro
+                </h1>
+                <p className="text-xs text-muted-foreground mt-1">Demo Company</p>
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 space-y-1">
-                {navItems.map((item) => (
-                    <Link
-                        key={item.name}
-                        href={item.href}
-                        className={cn(
-                            "flex items-center gap-3 px-4 py-3 rounded-lg",
-                            "text-muted-foreground hover:text-foreground",
-                            "hover:bg-accent transition-all duration-200",
-                            "group relative overflow-hidden"
-                        )}
-                    >
-                        <item.icon className="w-5 h-5 group-hover:text-primary transition-colors relative z-10" />
-                        <span className="font-medium relative z-10">{item.name}</span>
-                        <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </Link>
-                ))}
-            </nav>
+            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6 custom-scrollbar">
+                {/* Main Menu */}
+                <div className="space-y-1">
+                    {MAIN_MENU.map((item) => {
+                        const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={cn(
+                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                    isActive
+                                        ? "bg-primary/10 text-primary"
+                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                            >
+                                <item.icon className="w-4 h-4" />
+                                {item.name}
+                            </Link>
+                        );
+                    })}
+                </div>
 
-            {/* User Profile */}
-            <div className="mt-auto p-4 rounded-xl bg-card border border-border">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold">
-                        A
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">Admin User</p>
-                        <p className="text-xs text-muted-foreground">Plano Pro</p>
+                {/* Operations Section (ERP) */}
+                <div>
+                    <h3 className="px-3 text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider mb-2">
+                        Operações
+                    </h3>
+                    <div className="space-y-1">
+                        {OPERATIONS_MENU.map((item) => {
+                            const isActive = pathname === item.href || pathname.startsWith(item.href);
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                        isActive
+                                            ? "bg-primary/10 text-primary"
+                                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                    )}
+                                >
+                                    <item.icon className="w-4 h-4" />
+                                    {item.name}
+                                </Link>
+                            );
+                        })}
                     </div>
                 </div>
+            </nav>
+
+            {/* Footer / User */}
+            <div className="p-4 border-t border-border bg-muted/10">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                        A
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-sm font-medium truncate">Admin User</p>
+                        <p className="text-xs text-muted-foreground truncate">admin@bizflow.com</p>
+                    </div>
+                </div>
+                <form action={logout}>
+                    <button className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                        <LogOut className="w-4 h-4" />
+                        Sair
+                    </button>
+                </form>
             </div>
-        </aside>
+        </div>
     );
 }
