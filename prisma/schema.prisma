@@ -1,0 +1,302 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenancy
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  plan      String   @default("FREE") // FREE, PRO, ENTERPRISE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  products  Product[]
+  orders    Order[]
+  contacts  Contact[]
+  campaigns Campaign[]
+  transactions Transaction[]
+  pipelines    Pipeline[]
+  opportunities Opportunity[]
+  slabs        Slab[]
+  quotes       Quote[]
+  conversations Conversation[]
+  jobs         Job[]
+  calendars    Calendar[]
+  appointments Appointment[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // Hashed
+  name      String?
+  role      String   @default("USER") // ADMIN, USER, MANAGER
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ERP - Inventory & Sales
+model Product {
+  id          String   @id @default(cuid())
+  sku         String
+  name        String
+  description String?
+  price       Decimal
+  stock       Int      @default(0)
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems OrderItem[]
+  slabs      Slab[]
+  quoteItems QuoteItem[]
+
+  @@unique([tenantId, sku])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  customerName String?    // Simple string for now, or link to Contact
+  total       Decimal
+  status      String      @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items       OrderItem[]
+  contactId   String?
+  contact     Contact?    @relation(fields: [contactId], references: [id])
+  jobs        Job[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal
+}
+
+// CRM
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  stage     String   @default("LEAD") // LEAD, PROSPECT, CUSTOMER
+  score     Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+  opportunities Opportunity[]
+  quotes        Quote[]
+  conversations Conversation[]
+  appointments  Appointment[]
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  name        String
+  status      String   @default("DRAFT") // DRAFT, ACTIVE, COMPLETED
+  triggerRule String   // JSON or string describing the trigger (e.g. "STOCK_LOW", "NEW_ORDER")
+  content     String   // Email body or template ID
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Finance
+model Transaction {
+  id          String   @id @default(cuid())
+  description String
+  amount      Decimal
+  type        String   // INCOME, EXPENSE
+  category    String
+  date        DateTime @default(now())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// CRM - Pipelines
+model Pipeline {
+  id        String          @id @default(cuid())
+  name      String
+  tenantId  String
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
+  stages    PipelineStage[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model PipelineStage {
+  id            String        @id @default(cuid())
+  name          String
+  order         Int
+  pipelineId    String
+  pipeline      Pipeline      @relation(fields: [pipelineId], references: [id])
+  opportunities Opportunity[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Opportunity {
+  id        String        @id @default(cuid())
+  title     String
+  value     Decimal       @default(0)
+  status    String        @default("OPEN") // OPEN, WON, LOST, ABANDONED
+  contactId String
+  contact   Contact       @relation(fields: [contactId], references: [id])
+  stageId   String
+  stage     PipelineStage @relation(fields: [stageId], references: [id])
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+// ERP - Advanced Inventory
+model Slab {
+  id           String   @id @default(cuid())
+  serialNumber String
+  length       Decimal
+  height       Decimal
+  thickness    Decimal
+  finish       String
+  status       String   @default("AVAILABLE") // AVAILABLE, HOLD, SOLD
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id])
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ERP - Quoting
+model Quote {
+  id          String      @id @default(cuid())
+  number      String      // e.g. Q-1001
+  customerName String?
+  total       Decimal
+  status      String      @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED
+  validUntil  DateTime?
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  contactId   String?
+  contact     Contact?    @relation(fields: [contactId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items       QuoteItem[]
+}
+
+model QuoteItem {
+  id        String  @id @default(cuid())
+  quoteId   String
+  quote     Quote   @relation(fields: [quoteId], references: [id])
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  description String // Can be custom or product name
+  quantity  Decimal
+  unitPrice Decimal
+  total     Decimal
+}
+
+// CRM - Unified Conversations
+model Conversation {
+  id        String    @id @default(cuid())
+  contactId String
+  contact   Contact   @relation(fields: [contactId], references: [id])
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  channel   String    // EMAIL, SMS, WHATSAPP
+  lastMessageAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  messages  Message[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  content        String
+  direction      String       // INBOUND, OUTBOUND
+  status         String       @default("SENT") // SENT, DELIVERED, READ, FAILED
+  createdAt      DateTime     @default(now())
+}
+
+// ERP - Job Management (Fabrication)
+model Job {
+  id          String    @id @default(cuid())
+  name        String
+  orderId     String?
+  order       Order?    @relation(fields: [orderId], references: [id])
+  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, ON_HOLD
+  startDate   DateTime?
+  endDate     DateTime?
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  stages      JobStage[]
+}
+
+model JobStage {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+  name      String   // e.g. Cutting, Polishing, Installation
+  status    String   @default("PENDING")
+  completedAt DateTime?
+  order     Int
+}
+
+// CRM - Calendars & Appointments
+model Calendar {
+  id        String        @id @default(cuid())
+  name      String
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Appointment {
+  id          String    @id @default(cuid())
+  title       String
+  startTime   DateTime
+  endTime     DateTime
+  calendarId  String
+  calendar    Calendar  @relation(fields: [calendarId], references: [id])
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id])
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  status      String    @default("SCHEDULED") // SCHEDULED, CANCELLED, COMPLETED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
