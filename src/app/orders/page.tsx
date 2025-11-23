@@ -1,9 +1,10 @@
 'use client';
 
-import { Plus, Search, Filter, Loader2, ShoppingCart, FileText } from 'lucide-react';
+import { Plus, Search, Filter, Loader2, ShoppingCart, FileText, CreditCard } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Modal } from '@/components/Modal';
 import { createOrder, getOrders } from '@/lib/order-actions';
+import { createCheckoutSession } from '@/lib/payment-actions';
 import { getProducts } from '@/lib/inventory-actions';
 import { getContacts } from '@/lib/crm-actions';
 import { generateOrderPDF } from '@/lib/pdf-service';
@@ -184,6 +185,15 @@ export default function OrdersPage() {
                                             >
                                                 <FileText size={18} />
                                             </button>
+                                            {order.status === 'PENDING' && (
+                                                <button
+                                                    onClick={() => createCheckoutSession(order.id)}
+                                                    className="p-2 hover:bg-accent rounded-lg transition-colors text-muted-foreground hover:text-green-600"
+                                                    title="Pagar Agora"
+                                                >
+                                                    <CreditCard size={18} />
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

@@ -2,30 +2,118 @@
 
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
-import { triggerFormSubmitted } from './workflow-triggers';
+import { createOpportunity } from './pipeline-actions';
+import { saveFieldValue } from './field-actions';
 
-// ============= FORM CRUD =============
+// --- Pipeline Public Form Actions ---
 
-export async function getForms(tenantId: string) {
+export async function togglePublicForm(pipelineId: string, enabled: boolean) {
     try {
-        const forms = await prisma.form.findMany({
-            where: { tenantId },
-            include: {
-                fields: {
-                    orderBy: { order: 'asc' },
-                },
-                _count: {
-                    select: { submissions: true },
-                },
-            },
-            orderBy: { createdAt: 'desc' },
+        let slug = undefined;
+        if (enabled) {
+            // Generate simple slug from ID if not exists
+            const pipeline = await prisma.pipeline.findUnique({ where: { id: pipelineId } });
+            if (!pipeline?.publicFormSlug) {
+                slug = `${pipeline?.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${pipelineId.slice(-4)}`;
+            }
+        }
+
+        await prisma.pipeline.update({
+            where: { id: pipelineId },
+            data: {
+                publicFormEnabled: enabled,
+                ...(slug && { publicFormSlug: slug })
+            }
         });
-        return forms;
-    } catch (error) {
-        console.error('Failed to get forms:', error);
-        throw new Error('Failed to get forms');
+
+        revalidatePath('/crm/pipelines/settings');
+        return { success: true, slug };
+    } catch (error: any) {
+        console.error('Error toggling public form:', error);
+        return { success: false, error: error.message };
     }
 }
+
+export async function updateFieldFormSettings(fieldId: string, data: { showInForm: boolean; formLabel?: string }) {
+    try {
+        await prisma.stageField.update({
+            where: { id: fieldId },
+            data
+        });
+        revalidatePath('/crm/pipelines/settings');
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error updating field form settings:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function getPublicForm(slug: string) {
+    try {
+        const pipeline = await prisma.pipeline.findUnique({
+            where: { publicFormSlug: slug, publicFormEnabled: true },
+            include: {
+                stages: {
+                    orderBy: { order: 'asc' },
+                    take: 1, // Only get the first stage
+                    include: {
+                        fields: {
+                            where: { showInForm: true },
+                            orderBy: { order: 'asc' }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!pipeline || pipeline.stages.length === 0) return null;
+
+        return {
+            pipelineName: pipeline.name,
+            pipelineId: pipeline.id,
+            tenantId: pipeline.tenantId,
+            stage: pipeline.stages[0]
+        };
+    } catch (error) {
+        console.error('Error fetching public form:', error);
+        return null;
+    }
+}
+
+export async function submitPublicForm(slug: string, formData: any) {
+    try {
+        const form = await getPublicForm(slug);
+        if (!form) throw new Error('Form not found');
+
+        // 1. Create Opportunity
+        const oppResult = await createOpportunity({
+            title: formData.title || 'New Lead from Form',
+            value: 0, // Default
+            contactId: 'public-lead', // Placeholder, ideally create/find contact
+            stageId: form.stage.id,
+            tenantId: form.tenantId
+        });
+
+        if (!oppResult.success || !oppResult.opportunity) {
+            throw new Error(oppResult.error || 'Failed to create opportunity');
+        }
+
+        // 2. Save Custom Fields
+        const fieldPromises = Object.entries(formData).map(([key, value]) => {
+            if (key === 'title') return Promise.resolve(); // Handled above
+            return saveFieldValue(oppResult.opportunity!.id, key, String(value));
+        });
+
+        await Promise.all(fieldPromises);
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error submitting form:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Legacy / Standalone Form Actions (for Funnels & Forms) ---
 
 export async function getForm(formId: string) {
     try {
@@ -33,14 +121,14 @@ export async function getForm(formId: string) {
             where: { id: formId },
             include: {
                 fields: {
-                    orderBy: { order: 'asc' },
-                },
-            },
+                    orderBy: { order: 'asc' }
+                }
+            }
         });
         return form;
     } catch (error) {
-        console.error('Failed to get form:', error);
-        throw new Error('Failed to get form');
+        console.error('Error fetching form:', error);
+        return null;
     }
 }
 
@@ -48,266 +136,157 @@ export async function getFormBySlug(tenantId: string, slug: string) {
     try {
         const form = await prisma.form.findUnique({
             where: {
-                tenantId_slug: { tenantId, slug },
+                tenantId_slug: {
+                    tenantId,
+                    slug
+                }
             },
             include: {
                 fields: {
-                    orderBy: { order: 'asc' },
-                },
-            },
+                    orderBy: { order: 'asc' }
+                }
+            }
         });
         return form;
     } catch (error) {
-        console.error('Failed to get form by slug:', error);
-        throw new Error('Failed to get form by slug');
+        console.error('Error fetching form by slug:', error);
+        return null;
     }
 }
 
-export async function createForm(data: {
-    name: string;
-    description?: string;
-    slug: string;
-    tenantId: string;
-    submitButtonText?: string;
-    successMessage?: string;
-    redirectUrl?: string;
-    fields?: Array<{
-        label: string;
-        type: string;
-        placeholder?: string;
-        required?: boolean;
-        options?: any;
-        order: number;
-        mapToContact?: string;
-    }>;
-}) {
+export async function submitForm(formId: string, data: any) {
+    try {
+        const form = await prisma.form.findUnique({ where: { id: formId } });
+        if (!form) throw new Error('Form not found');
+
+        await prisma.formSubmission.create({
+            data: {
+                formId,
+                data: data,
+                // contactId: ... (logic to find/create contact would go here)
+            }
+        });
+
+        return { success: true, redirectUrl: form.redirectUrl };
+    } catch (error: any) {
+        console.error('Error submitting form:', error);
+        throw new Error(error.message);
+    }
+}
+
+export async function createForm(data: any) {
     try {
         const form = await prisma.form.create({
             data: {
                 name: data.name,
-                description: data.description,
                 slug: data.slug,
+                description: data.description,
                 tenantId: data.tenantId,
-                submitButtonText: data.submitButtonText || 'Enviar',
-                successMessage: data.successMessage || 'Obrigado pelo envio!',
+                submitButtonText: data.submitButtonText,
+                successMessage: data.successMessage,
                 redirectUrl: data.redirectUrl,
-                fields: data.fields
-                    ? {
-                          create: data.fields.map((field) => ({
-                              label: field.label,
-                              type: field.type,
-                              placeholder: field.placeholder,
-                              required: field.required || false,
-                              options: field.options,
-                              order: field.order,
-                              mapToContact: field.mapToContact,
-                          })),
-                      }
-                    : undefined,
-            },
-            include: {
                 fields: {
-                    orderBy: { order: 'asc' },
-                },
-            },
+                    create: data.fields.map((f: any) => ({
+                        label: f.label,
+                        type: f.type,
+                        placeholder: f.placeholder,
+                        required: f.required,
+                        options: f.options,
+                        order: f.order,
+                        mapToContact: f.mapToContact
+                    }))
+                }
+            }
         });
-
         revalidatePath('/forms');
         return form;
-    } catch (error) {
-        console.error('Failed to create form:', error);
-        throw new Error('Failed to create form');
+    } catch (error: any) {
+        console.error('Error creating form:', error);
+        throw new Error(error.message);
     }
 }
 
-export async function updateForm(
-    formId: string,
-    data: {
-        name?: string;
-        description?: string;
-        slug?: string;
-        isActive?: boolean;
-        submitButtonText?: string;
-        successMessage?: string;
-        redirectUrl?: string;
-        fields?: Array<{
-            id?: string;
-            label: string;
-            type: string;
-            placeholder?: string;
-            required?: boolean;
-            options?: any;
-            order: number;
-            mapToContact?: string;
-        }>;
-    }
-) {
+export async function updateForm(formId: string, data: any) {
     try {
-        // Update basic form info
-        const updateData: any = {};
-        if (data.name !== undefined) updateData.name = data.name;
-        if (data.description !== undefined) updateData.description = data.description;
-        if (data.slug !== undefined) updateData.slug = data.slug;
-        if (data.isActive !== undefined) updateData.isActive = data.isActive;
-        if (data.submitButtonText !== undefined) updateData.submitButtonText = data.submitButtonText;
-        if (data.successMessage !== undefined) updateData.successMessage = data.successMessage;
-        if (data.redirectUrl !== undefined) updateData.redirectUrl = data.redirectUrl;
-
-        // If fields are being updated, delete old and create new
-        if (data.fields) {
-            await prisma.formField.deleteMany({
-                where: { formId },
-            });
-            updateData.fields = {
-                create: data.fields.map((field) => ({
-                    label: field.label,
-                    type: field.type,
-                    placeholder: field.placeholder,
-                    required: field.required || false,
-                    options: field.options,
-                    order: field.order,
-                    mapToContact: field.mapToContact,
-                })),
-            };
-        }
-
+        // Update form details
         const form = await prisma.form.update({
             where: { id: formId },
-            data: updateData,
-            include: {
-                fields: {
-                    orderBy: { order: 'asc' },
-                },
-            },
+            data: {
+                name: data.name,
+                slug: data.slug,
+                description: data.description,
+                submitButtonText: data.submitButtonText,
+                successMessage: data.successMessage,
+                redirectUrl: data.redirectUrl,
+            }
+        });
+
+        // Delete existing fields and recreate them (simplest approach for now)
+        await prisma.formField.deleteMany({ where: { formId } });
+
+        await prisma.formField.createMany({
+            data: data.fields.map((f: any) => ({
+                formId,
+                label: f.label,
+                type: f.type,
+                placeholder: f.placeholder,
+                required: f.required,
+                options: f.options,
+                order: f.order,
+                mapToContact: f.mapToContact
+            }))
         });
 
         revalidatePath('/forms');
+        revalidatePath(`/forms/${formId}`);
         return form;
-    } catch (error) {
-        console.error('Failed to update form:', error);
-        throw new Error('Failed to update form');
+    } catch (error: any) {
+        console.error('Error updating form:', error);
+        throw new Error(error.message);
+    }
+}
+
+export async function getForms(tenantId: string) {
+    try {
+        const forms = await prisma.form.findMany({
+            where: { tenantId },
+            include: {
+                _count: {
+                    select: { submissions: true }
+                },
+                fields: true
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        return forms;
+    } catch (error: any) {
+        console.error('Error fetching forms:', error);
+        return [];
     }
 }
 
 export async function deleteForm(formId: string) {
     try {
-        await prisma.form.delete({
-            where: { id: formId },
-        });
-
+        await prisma.form.delete({ where: { id: formId } });
         revalidatePath('/forms');
         return { success: true };
-    } catch (error) {
-        console.error('Failed to delete form:', error);
-        throw new Error('Failed to delete form');
+    } catch (error: any) {
+        console.error('Error deleting form:', error);
+        throw new Error(error.message);
     }
 }
 
 export async function toggleFormStatus(formId: string, isActive: boolean) {
     try {
-        const form = await prisma.form.update({
+        await prisma.form.update({
             where: { id: formId },
-            data: { isActive },
+            data: { isActive }
         });
-
         revalidatePath('/forms');
-        return form;
-    } catch (error) {
-        console.error('Failed to toggle form status:', error);
-        throw new Error('Failed to toggle form status');
-    }
-}
-
-// ============= FORM SUBMISSIONS =============
-
-export async function submitForm(formId: string, formData: Record<string, any>) {
-    try {
-        // Get form with fields
-        const form = await prisma.form.findUnique({
-            where: { id: formId },
-            include: {
-                fields: true,
-            },
-        });
-
-        if (!form) {
-            throw new Error('Form not found');
-        }
-
-        if (!form.isActive) {
-            throw new Error('Form is not active');
-        }
-
-        // Extract contact mapping fields
-        const contactData: any = {};
-        for (const field of form.fields) {
-            if (field.mapToContact && formData[field.id]) {
-                contactData[field.mapToContact] = formData[field.id];
-            }
-        }
-
-        let contactId: string | undefined;
-
-        // Create or update contact if we have email
-        if (contactData.email) {
-            const existingContact = await prisma.contact.findFirst({
-                where: {
-                    tenantId: form.tenantId,
-                    email: contactData.email,
-                },
-            });
-
-            if (existingContact) {
-                // Update existing contact
-                const updated = await prisma.contact.update({
-                    where: { id: existingContact.id },
-                    data: {
-                        name: contactData.name || existingContact.name,
-                        phone: contactData.phone || existingContact.phone,
-                    },
-                });
-                contactId = updated.id;
-            } else {
-                // Create new contact
-                const created = await prisma.contact.create({
-                    data: {
-                        tenantId: form.tenantId,
-                        name: contactData.name || 'Unknown',
-                        email: contactData.email,
-                        phone: contactData.phone,
-                        stage: 'LEAD',
-                    },
-                });
-                contactId = created.id;
-            }
-        }
-
-        // Save submission
-        const submission = await prisma.formSubmission.create({
-            data: {
-                formId,
-                data: formData,
-                contactId,
-            },
-        });
-
-        // Trigger workflow
-        await triggerFormSubmitted({
-            formId: form.id,
-            formData: formData,
-            tenantId: form.tenantId,
-        });
-
-        return {
-            success: true,
-            submissionId: submission.id,
-            contactId,
-            successMessage: form.successMessage,
-            redirectUrl: form.redirectUrl,
-        };
-    } catch (error) {
-        console.error('Failed to submit form:', error);
-        throw new Error('Failed to submit form');
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error toggling form status:', error);
+        throw new Error(error.message);
     }
 }
 
@@ -315,27 +294,21 @@ export async function getFormSubmissions(formId: string) {
     try {
         const submissions = await prisma.formSubmission.findMany({
             where: { formId },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'desc' }
         });
         return submissions;
-    } catch (error) {
-        console.error('Failed to get form submissions:', error);
-        throw new Error('Failed to get form submissions');
+    } catch (error: any) {
+        console.error('Error fetching submissions:', error);
+        return [];
     }
 }
 
 export async function deleteFormSubmission(submissionId: string) {
     try {
-        await prisma.formSubmission.delete({
-            where: { id: submissionId },
-        });
-
-        revalidatePath('/forms');
+        await prisma.formSubmission.delete({ where: { id: submissionId } });
         return { success: true };
-    } catch (error) {
-        console.error('Failed to delete submission:', error);
-        throw new Error('Failed to delete submission');
+    } catch (error: any) {
+        console.error('Error deleting submission:', error);
+        throw new Error(error.message);
     }
 }
-
-// Helper functions and constants are in form-utils.ts
