@@ -5,7 +5,9 @@ import { Modal } from '@/components/Modal';
 import { getStageFields, getOpportunityFieldValues, saveFieldValue } from '@/lib/field-actions';
 import { getUsers } from '@/lib/settings-actions';
 import { getTags } from '@/lib/tag-actions';
-import { Loader2 } from 'lucide-react';
+import { updateOpportunityAI } from '@/lib/pipeline-actions';
+import { Loader2, Sparkles, BrainCircuit } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface OpportunityDetailsModalProps {
     isOpen: boolean;
@@ -23,6 +25,11 @@ export function OpportunityDetailsModal({ isOpen, onClose, opportunity, stageNam
     // System Data
     const [users, setUsers] = useState<any[]>([]);
     const [tags, setTags] = useState<any[]>([]);
+
+    // AI State
+    const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [aiData, setAiData] = useState<{ score?: number; summary?: string }>({});
 
     useEffect(() => {
         if (isOpen && opportunity) {
@@ -49,6 +56,14 @@ export function OpportunityDetailsModal({ isOpen, onClose, opportunity, stageNam
                 valuesMap[fv.fieldId] = fv.value;
             });
             setValues(valuesMap);
+
+            // Set initial AI data
+            if (opportunity.aiScore !== null || opportunity.aiSummary) {
+                setAiData({
+                    score: opportunity.aiScore,
+                    summary: opportunity.aiSummary
+                });
+            }
         } catch (error) {
             console.error('Failed to load fields', error);
         } finally {
@@ -78,6 +93,21 @@ export function OpportunityDetailsModal({ isOpen, onClose, opportunity, stageNam
         setValues(prev => ({ ...prev, [fieldId]: value }));
     };
 
+    async function handleAnalyzeAI() {
+        setIsAnalyzing(true);
+        try {
+            const updatedOpp: any = await updateOpportunityAI(opportunity.id);
+            setAiData({
+                score: updatedOpp.aiScore || 0,
+                summary: updatedOpp.aiSummary || ''
+            });
+        } catch (error) {
+            console.error('Failed to analyze with AI', error);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    }
+
     if (!opportunity) return null;
 
     return (
@@ -103,7 +133,37 @@ export function OpportunityDetailsModal({ isOpen, onClose, opportunity, stageNam
                     </div>
                 </div>
 
-                <div className="border-t border-border pt-4">
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-border">
+                <button
+                    onClick={() => setActiveTab('details')}
+                    className={cn(
+                        "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+                        activeTab === 'details'
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    Details
+                </button>
+                <button
+                    onClick={() => setActiveTab('ai')}
+                    className={cn(
+                        "px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
+                        activeTab === 'ai'
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    <Sparkles size={14} />
+                    AI Insights
+                </button>
+            </div>
+
+            {activeTab === 'details' ? (
+                <div className="pt-2">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                         Stage Fields
                         {isLoading && <Loader2 className="animate-spin" size={14} />}
@@ -340,7 +400,81 @@ export function OpportunityDetailsModal({ isOpen, onClose, opportunity, stageNam
                         </form>
                     )}
                 </div>
-            </div>
+            ) : (
+                <div className="pt-2 space-y-6">
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-semibold flex items-center gap-2">
+                            <BrainCircuit className="text-primary" size={20} />
+                            AI Analysis
+                        </h3>
+                        <button
+                            onClick={handleAnalyzeAI}
+                            disabled={isAnalyzing}
+                            className="px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {isAnalyzing ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />}
+                            {aiData.score ? 'Re-Analyze' : 'Analyze Opportunity'}
+                        </button>
+                    </div>
+
+                    {/* Score Card */}
+                    <div className="bg-card border border-border rounded-xl p-6 flex items-center gap-6">
+                        <div className="relative w-24 h-24 flex items-center justify-center">
+                            <svg className="w-full h-full transform -rotate-90">
+                                <circle
+                                    cx="48"
+                                    cy="48"
+                                    r="40"
+                                    className="stroke-muted"
+                                    strokeWidth="8"
+                                    fill="none"
+                                />
+                                <circle
+                                    cx="48"
+                                    cy="48"
+                                    r="40"
+                                    className={cn(
+                                        "stroke-primary transition-all duration-1000 ease-out",
+                                        !aiData.score && "stroke-none"
+                                    )}
+                                    strokeWidth="8"
+                                    fill="none"
+                                    strokeDasharray={251.2}
+                                    strokeDashoffset={251.2 - (251.2 * (aiData.score || 0)) / 100}
+                                    strokeLinecap="round"
+                                />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className="text-2xl font-bold">{aiData.score || 0}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Score</span>
+                            </div>
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="font-medium mb-1">Lead Quality Score</h4>
+                            <p className="text-sm text-muted-foreground">
+                                AI-calculated probability of closing based on deal value, stage velocity, and engagement metrics.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Summary Card */}
+                    <div className="bg-muted/30 rounded-xl p-6 border border-border">
+                        <h4 className="font-medium mb-3 flex items-center gap-2">
+                            <Sparkles size={16} className="text-yellow-500" />
+                            Executive Summary
+                        </h4>
+                        {aiData.summary ? (
+                            <div className="prose prose-sm max-w-none text-muted-foreground whitespace-pre-wrap">
+                                {aiData.summary}
+                            </div>
+                        ) : (
+                            <p className="text-sm text-muted-foreground italic">
+                                Click "Analyze Opportunity" to generate an AI summary and insights.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
         </Modal>
     );
 }

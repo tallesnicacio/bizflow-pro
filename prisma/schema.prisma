@@ -42,6 +42,7 @@ model Tenant {
   tasks          Task[]
   tags           Tag[]
   emailDomains   EmailDomain[]
+  webhooks       Webhook[]
 }
 
 model User {
@@ -288,6 +289,10 @@ model Opportunity {
   tenant    Tenant        @relation(fields: [tenantId], references: [id])
   
   fieldValues OpportunityFieldValue[]
+  
+  // AI Features
+  aiScore     Int?      // 0-100
+  aiSummary   String?   // Brief summary
 
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -669,4 +674,19 @@ model EmailDomain {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, domain])
+}
+
+// Webhooks
+model Webhook {
+  id        String   @id @default(cuid())
+  url       String
+  events    String   // Comma-separated list of events (e.g. "opportunity.created,stage.changed")
+  isActive  Boolean  @default(true)
+  secret    String?  // For signature verification
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

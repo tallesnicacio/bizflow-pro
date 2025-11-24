@@ -4,6 +4,8 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { Decimal } from '@prisma/client/runtime/library';
 import { triggerAutomations } from './automation-actions';
+import { generateLeadScore, generateContent } from './ai-service';
+import { triggerWebhooks } from './webhook-actions';
 
 // --- Pipeline Management ---
 
@@ -147,8 +149,40 @@ export async function deleteStage(stageId: string) {
         revalidatePath('/crm/pipelines');
         return { success: true };
     } catch (error: any) {
-        console.error('Error deleting stage:', error);
-        return { success: false, error: error.message };
+        console.error('Failed to update stage', error);
+        throw new Error(error.message);
+    }
+}
+
+export async function updateOpportunityAI(opportunityId: string) {
+    try {
+        const opportunity = await prisma.opportunity.findUnique({
+            where: { id: opportunityId },
+            include: { contact: true, stage: true }
+        });
+
+        if (!opportunity) throw new Error("Opportunity not found");
+
+        // Generate Score
+        const { score } = await generateLeadScore(opportunity);
+
+        // Generate Summary
+        const summary = await generateContent("summary", opportunity);
+
+        // Update Opportunity
+        const updated = await prisma.opportunity.update({
+            where: { id: opportunityId },
+            data: {
+                aiScore: score,
+                aiSummary: summary
+            }
+        });
+
+        revalidatePath('/crm/pipelines');
+        return updated;
+    } catch (error: any) {
+        console.error('Failed to update AI insights', error);
+        throw new Error(error.message);
     }
 }
 
@@ -203,14 +237,17 @@ export async function createOpportunity(data: {
             }
         });
 
-        // Trigger Automation
-        await triggerAutomations('CARD_CREATED', {
+        // Trigger Automations (Async)
+        triggerAutomations('CARD_CREATED', {
             pipelineId: opportunity.stage.pipelineId,
-            stageId: opportunity.stageId,
+            stageId: data.stageId,
             opportunityId: opportunity.id,
-            userId: 'system', // TODO: Pass actual user ID
+            userId: 'system',
             tenantId: data.tenantId
         });
+
+        // Trigger Webhooks (Async)
+        triggerWebhooks(data.tenantId, 'opportunity.created', opportunity);
 
         revalidatePath('/crm/pipelines');
         return { success: true, opportunity: serializeOpportunity(opportunity) };
@@ -228,13 +265,21 @@ export async function updateOpportunityStage(opportunityId: string, newStageId: 
             include: { stage: true }
         });
 
-        // Trigger Automation
-        await triggerAutomations('STAGE_ENTER', {
+        // Trigger Automations
+        triggerAutomations('STAGE_ENTER', {
             pipelineId: opportunity.stage.pipelineId,
             stageId: newStageId,
-            opportunityId: opportunity.id,
-            userId: 'system', // TODO: Pass actual user ID
+            opportunityId: opportunityId,
+            userId: 'system',
             tenantId: opportunity.tenantId
+        });
+
+        // Trigger Webhooks
+        triggerWebhooks(opportunity.tenantId, 'opportunity.stage_changed', {
+            opportunityId,
+            oldStageId: opportunity.stageId,
+            newStageId: newStageId,
+            timestamp: new Date().toISOString()
         });
 
         revalidatePath('/crm/pipelines');

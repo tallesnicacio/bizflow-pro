@@ -1,12 +1,16 @@
-import { getDashboardStats, getRecentActivity } from '@/lib/analytics-actions';
+import { getDashboardStats, getRecentActivity, getRevenueHistory, getPipelineFunnel } from '@/lib/analytics-actions';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
+import { RevenueChart } from '@/components/dashboard/RevenueChart';
+import { PipelineFunnelChart } from '@/components/dashboard/PipelineFunnelChart';
 import { DollarSign, Users, Hammer, Package, Plus } from 'lucide-react';
 import Link from 'next/link';
 
 export default async function DashboardPage() {
     const stats = await getDashboardStats();
     const activity = await getRecentActivity();
+    const revenueHistory = await getRevenueHistory();
+    const pipelineFunnel = await getPipelineFunnel();
 
     if (!stats) {
         return (
@@ -64,19 +68,23 @@ export default async function DashboardPage() {
             </div>
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Chart Area (Placeholder for now) */}
-                <div className="lg:col-span-2 bg-card border border-border rounded-xl p-6 shadow-sm min-h-[400px]">
+            <div className="grid grid-cols-1 lg:grid-cols-7 gap-8">
+                {/* Revenue Chart */}
+                <div className="lg:col-span-4 bg-card border border-border rounded-xl p-6 shadow-sm">
                     <h3 className="font-semibold text-lg mb-6">Desempenho de Vendas</h3>
-                    <div className="h-[300px] flex items-center justify-center bg-muted/10 rounded-lg border border-dashed border-border">
-                        <p className="text-muted-foreground text-sm">Gráfico de Vendas (Em Breve)</p>
-                    </div>
+                    <RevenueChart data={revenueHistory} />
                 </div>
 
-                {/* Recent Activity */}
-                <div className="lg:col-span-1">
-                    <RecentActivity activities={activity} />
+                {/* Pipeline Funnel */}
+                <div className="lg:col-span-3 bg-card border border-border rounded-xl p-6 shadow-sm">
+                    <h3 className="font-semibold text-lg mb-6">Funil de Vendas</h3>
+                    <PipelineFunnelChart data={pipelineFunnel} />
                 </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="grid grid-cols-1">
+                <RecentActivity activities={activity} />
             </div>
         </div>
     );

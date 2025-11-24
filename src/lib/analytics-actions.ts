@@ -102,3 +102,76 @@ export async function getRecentActivity() {
 
     return activity;
 }
+
+export async function getRevenueHistory() {
+    const session = await auth();
+    if (!session?.user?.tenantId) return [];
+    const tenantId = session.user.tenantId;
+
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1); // Start of that month
+
+    const orders = await prisma.order.findMany({
+        where: {
+            tenantId,
+            createdAt: { gte: sixMonthsAgo },
+            status: { not: 'CANCELLED' }
+        },
+        select: {
+            total: true,
+            createdAt: true
+        }
+    });
+
+    // Group by month
+    const monthlyRevenue = new Map<string, number>();
+
+    // Initialize last 6 months with 0
+    for (let i = 0; i < 6; i++) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const key = d.toLocaleString('default', { month: 'short' });
+        monthlyRevenue.set(key, 0);
+    }
+
+    orders.forEach(order => {
+        const month = order.createdAt.toLocaleString('default', { month: 'short' });
+        const current = monthlyRevenue.get(month) || 0;
+        monthlyRevenue.set(month, current + Number(order.total));
+    });
+
+    // Convert to array and reverse to show chronological order
+    return Array.from(monthlyRevenue.entries())
+        .map(([name, value]) => ({ name, value }))
+        .reverse();
+}
+
+export async function getPipelineFunnel() {
+    const session = await auth();
+    if (!session?.user?.tenantId) return [];
+    const tenantId = session.user.tenantId;
+
+    // Get all stages first to ensure order
+    const pipelines = await prisma.pipeline.findFirst({
+        where: { tenantId },
+        include: {
+            stages: {
+                orderBy: { order: 'asc' },
+                include: {
+                    _count: {
+                        select: { opportunities: true }
+                    }
+                }
+            }
+        }
+    });
+
+    if (!pipelines) return [];
+
+    return pipelines.stages.map(stage => ({
+        name: stage.name,
+        value: stage._count.opportunities,
+        fill: stage.color || '#8884d8'
+    }));
+}
