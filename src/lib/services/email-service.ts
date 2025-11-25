@@ -1,4 +1,5 @@
 import sgMail from '@sendgrid/mail';
+import { logger } from '../logger';
 
 const API_KEY = process.env.SENDGRID_API_KEY;
 const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'noreply@bizflow.com';
@@ -10,9 +11,7 @@ if (API_KEY) {
 export const emailService = {
     async sendEmail(to: string, subject: string, html: string) {
         if (!API_KEY) {
-            console.log(`[Email Service] Simulation Mode: Sending email to ${to}`);
-            console.log(`Subject: ${subject}`);
-            console.log(`Content: ${html.substring(0, 50)}...`);
+            logger.info('[Email Service] Simulation Mode: Email not sent (no API key configured)');
             return { success: true, simulated: true };
         }
 
@@ -23,10 +22,10 @@ export const emailService = {
                 subject,
                 html,
             });
-            console.log(`[Email Service] Email sent to ${to}`);
+            logger.info('[Email Service] Email sent successfully');
             return { success: true, simulated: false };
         } catch (error) {
-            console.error('[Email Service] Error sending email:', error);
+            logger.error('[Email Service] Failed to send email', error);
             return { success: false, error };
         }
     }

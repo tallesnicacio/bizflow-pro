@@ -10,7 +10,7 @@ async function getUser(email: string) {
         const user = await prisma.user.findUnique({ where: { email } });
         return user;
     } catch (error) {
-        console.error('Failed to fetch user:', error);
+        // Security: Log error without exposing user details
         throw new Error('Failed to fetch user.');
     }
 }
@@ -39,7 +39,7 @@ export const { auth, signIn, signOut } = NextAuth({
                     if (passwordsMatch) return user;
                 }
 
-                console.log('Invalid credentials');
+                // Security: Do not log invalid credentials attempts
                 return null;
             },
         }),
