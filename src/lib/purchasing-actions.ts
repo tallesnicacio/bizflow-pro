@@ -4,17 +4,32 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { convertDecimalToNumber } from './decimal-utils';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 // ============= SUPPLIER ACTIONS =============
 
-export async function getSuppliers() {
+export async function getSuppliers(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const suppliers = await prisma.supplier.findMany({
-        where: { tenantId },
-        orderBy: { name: 'asc' },
-    });
-    return suppliers;
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [suppliers, total] = await Promise.all([
+        prisma.supplier.findMany({
+            where,
+            orderBy: { name: 'asc' },
+            skip,
+            take,
+        }),
+        prisma.supplier.count({ where }),
+    ]);
+
+    return createPaginatedResponse(suppliers, total, page, limit);
 }
 
 export async function createSupplier(data: {
@@ -40,20 +55,29 @@ export async function createSupplier(data: {
 
 // ============= PURCHASE ORDER ACTIONS =============
 
-export async function getPurchaseOrders() {
+export async function getPurchaseOrders(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const orders = await prisma.purchaseOrder.findMany({
-        where: { tenantId },
-        include: {
-            supplier: true,
-            container: true,
-            items: true,
-        },
-        orderBy: { createdAt: 'desc' },
-    });
+    const { page, limit, skip, take } = preparePagination(paginationParams);
 
-    return orders.map(order => ({
+    const where = { tenantId };
+
+    const [orders, total] = await Promise.all([
+        prisma.purchaseOrder.findMany({
+            where,
+            include: {
+                supplier: true,
+                container: true,
+                items: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.purchaseOrder.count({ where }),
+    ]);
+
+    const mappedOrders = orders.map(order => ({
         ...order,
         totalAmount: convertDecimalToNumber(order.totalAmount),
         items: order.items.map(item => ({
@@ -62,6 +86,8 @@ export async function getPurchaseOrders() {
             totalPrice: convertDecimalToNumber(item.totalPrice),
         })),
     }));
+
+    return createPaginatedResponse(mappedOrders, total, page, limit);
 }
 
 export async function createPurchaseOrder(data: {
@@ -114,23 +140,32 @@ export async function createPurchaseOrder(data: {
 
 // ============= CONTAINER ACTIONS =============
 
-export async function getContainers() {
+export async function getContainers(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const containers = await prisma.container.findMany({
-        where: { tenantId },
-        include: {
-            purchaseOrders: {
-                include: {
-                    supplier: true,
-                    items: true,
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [containers, total] = await Promise.all([
+        prisma.container.findMany({
+            where,
+            include: {
+                purchaseOrders: {
+                    include: {
+                        supplier: true,
+                        items: true,
+                    },
                 },
             },
-        },
-        orderBy: { createdAt: 'desc' },
-    });
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.container.count({ where }),
+    ]);
 
-    return containers.map(container => ({
+    const mappedContainers = containers.map(container => ({
         ...container,
         freightCost: convertDecimalToNumber(container.freightCost),
         customsCost: convertDecimalToNumber(container.customsCost),
@@ -138,6 +173,8 @@ export async function getContainers() {
         otherCosts: convertDecimalToNumber(container.otherCosts),
         totalLandedCost: convertDecimalToNumber(container.totalLandedCost),
     }));
+
+    return createPaginatedResponse(mappedContainers, total, page, limit);
 }
 
 export async function createContainer(data: {

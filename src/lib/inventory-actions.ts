@@ -4,6 +4,11 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { convertDecimalToNumber } from './decimal-utils';
 import { requireAuth } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 export async function createProduct(data: {
     name: string;
@@ -27,12 +32,27 @@ export async function createProduct(data: {
     return convertDecimalToNumber(product);
 }
 
-export async function getProducts() {
+export async function getProducts(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const products = await prisma.product.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: 'desc' },
-    });
-    return convertDecimalToNumber(products);
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [products, total] = await Promise.all([
+        prisma.product.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.product.count({ where }),
+    ]);
+
+    return createPaginatedResponse(
+        convertDecimalToNumber(products),
+        total,
+        page,
+        limit
+    );
 }

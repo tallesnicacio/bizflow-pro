@@ -6,25 +6,40 @@ import { triggerFormSubmitted } from './workflow-triggers';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
 import { rateLimiter, RATE_LIMITS } from './rate-limiter';
 import { headers } from 'next/headers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 // ============= FORM CRUD =============
 
-export async function getForms() {
+export async function getForms(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const forms = await prisma.form.findMany({
-        where: { tenantId },
-        include: {
-            fields: {
-                orderBy: { order: 'asc' },
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [forms, total] = await Promise.all([
+        prisma.form.findMany({
+            where,
+            include: {
+                fields: {
+                    orderBy: { order: 'asc' },
+                },
+                _count: {
+                    select: { submissions: true },
+                },
             },
-            _count: {
-                select: { submissions: true },
-            },
-        },
-        orderBy: { createdAt: 'desc' },
-    });
-    return forms;
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.form.count({ where }),
+    ]);
+
+    return createPaginatedResponse(forms, total, page, limit);
 }
 
 export async function getForm(formId: string) {
@@ -365,8 +380,13 @@ export async function submitForm(formId: string, formData: Record<string, any>) 
     };
 }
 
-export async function getFormSubmissions(formId: string) {
+export async function getFormSubmissions(
+    formId: string,
+    paginationParams?: PaginationParams
+) {
     const { tenantId } = await requireAuth();
+
+    const { page, limit, skip, take } = preparePagination(paginationParams);
 
     // Validate form belongs to tenant
     const form = await prisma.form.findUnique({
@@ -380,11 +400,19 @@ export async function getFormSubmissions(formId: string) {
 
     validateTenantAccess(form.tenantId, tenantId);
 
-    const submissions = await prisma.formSubmission.findMany({
-        where: { formId },
-        orderBy: { createdAt: 'desc' },
-    });
-    return submissions;
+    const where = { formId };
+
+    const [submissions, total] = await Promise.all([
+        prisma.formSubmission.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.formSubmission.count({ where }),
+    ]);
+
+    return createPaginatedResponse(submissions, total, page, limit);
 }
 
 export async function deleteFormSubmission(submissionId: string) {

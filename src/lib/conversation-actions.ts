@@ -3,22 +3,37 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getConversations() {
+export async function getConversations(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const conversations = await prisma.conversation.findMany({
-        where: { tenantId },
-        orderBy: { lastMessageAt: 'desc' },
-        include: {
-            contact: true,
-            messages: {
-                orderBy: { createdAt: 'desc' },
-                take: 1,
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [conversations, total] = await Promise.all([
+        prisma.conversation.findMany({
+            where,
+            orderBy: { lastMessageAt: 'desc' },
+            include: {
+                contact: true,
+                messages: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                },
             },
-        },
-    });
-    return conversations;
+            skip,
+            take,
+        }),
+        prisma.conversation.count({ where }),
+    ]);
+
+    return createPaginatedResponse(conversations, total, page, limit);
 }
 
 export async function getConversation(conversationId: string) {

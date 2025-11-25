@@ -3,22 +3,37 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 // ============= FUNNEL CRUD =============
 
-export async function getFunnels() {
+export async function getFunnels(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const funnels = await prisma.funnel.findMany({
-        where: { tenantId },
-        include: {
-            pages: {
-                orderBy: { order: 'asc' },
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [funnels, total] = await Promise.all([
+        prisma.funnel.findMany({
+            where,
+            include: {
+                pages: {
+                    orderBy: { order: 'asc' },
+                },
             },
-        },
-        orderBy: { createdAt: 'desc' },
-    });
-    return funnels;
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.funnel.count({ where }),
+    ]);
+
+    return createPaginatedResponse(funnels, total, page, limit);
 }
 
 export async function getFunnel(funnelId: string) {

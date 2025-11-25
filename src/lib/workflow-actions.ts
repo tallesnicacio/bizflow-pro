@@ -4,21 +4,36 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { convertDecimalToNumber } from './decimal-utils';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getWorkflows() {
+export async function getWorkflows(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const workflows = await prisma.workflow.findMany({
-        where: { tenantId },
-        include: {
-            trigger: true,
-            actions: {
-                orderBy: { order: 'asc' },
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [workflows, total] = await Promise.all([
+        prisma.workflow.findMany({
+            where,
+            include: {
+                trigger: true,
+                actions: {
+                    orderBy: { order: 'asc' },
+                },
             },
-        },
-        orderBy: { createdAt: 'desc' },
-    });
-    return workflows;
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.workflow.count({ where }),
+    ]);
+
+    return createPaginatedResponse(workflows, total, page, limit);
 }
 
 export async function getWorkflow(workflowId: string) {

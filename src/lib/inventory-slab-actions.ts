@@ -3,6 +3,11 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 export async function getProduct(productId: string) {
     const { tenantId } = await requireAuth();
@@ -60,8 +65,13 @@ export async function createSlab(data: {
     return slab;
 }
 
-export async function getSlabs(productId: string) {
+export async function getSlabs(
+    productId: string,
+    paginationParams?: PaginationParams
+) {
     const { tenantId } = await requireAuth();
+
+    const { page, limit, skip, take } = preparePagination(paginationParams);
 
     // Validate product belongs to tenant
     const product = await prisma.product.findUnique({
@@ -75,9 +85,17 @@ export async function getSlabs(productId: string) {
 
     validateTenantAccess(product.tenantId, tenantId);
 
-    const slabs = await prisma.slab.findMany({
-        where: { productId },
-        orderBy: { createdAt: 'desc' },
-    });
-    return slabs;
+    const where = { productId };
+
+    const [slabs, total] = await Promise.all([
+        prisma.slab.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.slab.count({ where }),
+    ]);
+
+    return createPaginatedResponse(slabs, total, page, limit);
 }

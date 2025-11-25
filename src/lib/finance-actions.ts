@@ -3,6 +3,11 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 export async function createTransaction(data: {
     description: string;
@@ -28,16 +33,26 @@ export async function createTransaction(data: {
     return transaction;
 }
 
-export async function getTransactions() {
+export async function getTransactions(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const transactions = await prisma.transaction.findMany({
-        where: { tenantId },
-        orderBy: {
-            date: 'desc',
-        },
-    });
-    return transactions;
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [transactions, total] = await Promise.all([
+        prisma.transaction.findMany({
+            where,
+            orderBy: {
+                date: 'desc',
+            },
+            skip,
+            take,
+        }),
+        prisma.transaction.count({ where }),
+    ]);
+
+    return createPaginatedResponse(transactions, total, page, limit);
 }
 
 export async function getFinancialSummary() {

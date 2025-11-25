@@ -4,15 +4,25 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { convertDecimalToNumber } from './decimal-utils';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 // ============= HOLD CRUD =============
 
-export async function getHolds(filters?: {
-    status?: string;
-    contactId?: string;
-    slabId?: string;
-}) {
+export async function getHolds(
+    filters?: {
+        status?: string;
+        contactId?: string;
+        slabId?: string;
+    },
+    paginationParams?: PaginationParams
+) {
     const { tenantId } = await requireAuth();
+
+    const { page, limit, skip, take } = preparePagination(paginationParams);
 
     const where: any = { tenantId };
 
@@ -26,20 +36,25 @@ export async function getHolds(filters?: {
         where.slabId = filters.slabId;
     }
 
-    const holds = await prisma.hold.findMany({
-        where,
-        include: {
-            slab: {
-                include: {
-                    product: true,
+    const [holds, total] = await Promise.all([
+        prisma.hold.findMany({
+            where,
+            include: {
+                slab: {
+                    include: {
+                        product: true,
+                    },
                 },
+                contact: true,
             },
-            contact: true,
-        },
-        orderBy: { createdAt: 'desc' },
-    });
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.hold.count({ where }),
+    ]);
 
-    return holds.map(hold => ({
+    const mappedHolds = holds.map(hold => ({
         ...hold,
         slab: hold.slab ? {
             ...hold.slab,
@@ -52,6 +67,8 @@ export async function getHolds(filters?: {
             } : null,
         } : null,
     }));
+
+    return createPaginatedResponse(mappedHolds, total, page, limit);
 }
 
 export async function getHold(holdId: string) {

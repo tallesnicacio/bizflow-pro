@@ -3,21 +3,36 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getJobs() {
+export async function getJobs(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const jobs = await prisma.job.findMany({
-        where: { tenantId },
-        include: {
-            order: true,
-            stages: {
-                orderBy: { order: 'asc' },
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [jobs, total] = await Promise.all([
+        prisma.job.findMany({
+            where,
+            include: {
+                order: true,
+                stages: {
+                    orderBy: { order: 'asc' },
+                },
             },
-        },
-        orderBy: { createdAt: 'desc' },
-    });
-    return jobs;
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take,
+        }),
+        prisma.job.count({ where }),
+    ]);
+
+    return createPaginatedResponse(jobs, total, page, limit);
 }
 
 export async function createJob(data: {

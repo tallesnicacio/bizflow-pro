@@ -4,6 +4,11 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { convertDecimalToNumber } from './decimal-utils';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 export async function createQuote(data: {
     customerName?: string;
@@ -67,16 +72,31 @@ export async function createQuote(data: {
     return convertDecimalToNumber(quote);
 }
 
-export async function getQuotes() {
+export async function getQuotes(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const quotes = await prisma.quote.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: 'desc' },
-        include: {
-            contact: true,
-            items: true,
-        },
-    });
-    return convertDecimalToNumber(quotes);
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [quotes, total] = await Promise.all([
+        prisma.quote.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            include: {
+                contact: true,
+                items: true,
+            },
+            skip,
+            take,
+        }),
+        prisma.quote.count({ where }),
+    ]);
+
+    return createPaginatedResponse(
+        convertDecimalToNumber(quotes),
+        total,
+        page,
+        limit
+    );
 }

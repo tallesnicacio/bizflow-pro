@@ -3,18 +3,33 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getAppointments() {
+export async function getAppointments(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const appointments = await prisma.appointment.findMany({
-        where: { tenantId },
-        include: {
-            contact: true,
-        },
-        orderBy: { startTime: 'asc' },
-    });
-    return appointments;
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [appointments, total] = await Promise.all([
+        prisma.appointment.findMany({
+            where,
+            include: {
+                contact: true,
+            },
+            orderBy: { startTime: 'asc' },
+            skip,
+            take,
+        }),
+        prisma.appointment.count({ where }),
+    ]);
+
+    return createPaginatedResponse(appointments, total, page, limit);
 }
 
 export async function createAppointment(data: {

@@ -3,28 +3,42 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getPipelines() {
+export async function getPipelines(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const pipelines = await prisma.pipeline.findMany({
-        where: { tenantId },
-        include: {
-            stages: {
-                orderBy: { order: 'asc' },
-                include: {
-                    opportunities: {
-                        include: {
-                            contact: true,
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [pipelines, total] = await Promise.all([
+        prisma.pipeline.findMany({
+            where,
+            include: {
+                stages: {
+                    orderBy: { order: 'asc' },
+                    include: {
+                        opportunities: {
+                            include: {
+                                contact: true,
+                            },
                         },
                     },
                 },
             },
-        },
-    });
+            skip,
+            take,
+        }),
+        prisma.pipeline.count({ where }),
+    ]);
 
     // Convert Decimal to number for client serialization
-    return pipelines.map((pipeline: any) => ({
+    const mappedPipelines = pipelines.map((pipeline: any) => ({
         ...pipeline,
         stages: pipeline.stages.map((stage: any) => ({
             ...stage,
@@ -34,6 +48,8 @@ export async function getPipelines() {
             })),
         })),
     }));
+
+    return createPaginatedResponse(mappedPipelines, total, page, limit);
 }
 
 export async function createPipeline(data: { name: string }) {

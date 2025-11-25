@@ -3,6 +3,11 @@
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 export async function createContact(data: {
     name: string;
@@ -26,21 +31,31 @@ export async function createContact(data: {
     return contact;
 }
 
-export async function getContacts() {
+export async function getContacts(paginationParams?: PaginationParams) {
     const { tenantId } = await requireAuth();
 
-    const contacts = await prisma.contact.findMany({
-        where: { tenantId },
-        orderBy: {
-            createdAt: 'desc',
-        },
-        include: {
-            _count: {
-                select: { orders: true },
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [contacts, total] = await Promise.all([
+        prisma.contact.findMany({
+            where,
+            orderBy: {
+                createdAt: 'desc',
             },
-        },
-    });
-    return contacts;
+            include: {
+                _count: {
+                    select: { orders: true },
+                },
+            },
+            skip,
+            take,
+        }),
+        prisma.contact.count({ where }),
+    ]);
+
+    return createPaginatedResponse(contacts, total, page, limit);
 }
 
 export async function updateContact(id: string, data: {
