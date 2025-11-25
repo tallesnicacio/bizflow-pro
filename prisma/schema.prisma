@@ -55,6 +55,9 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignedTasks Task[]
+
+  @@index([tenantId])
+  @@index([tenantId, role])
 }
 
 // ERP - Inventory & Sales
@@ -75,6 +78,8 @@ model Product {
   quoteItems QuoteItem[]
 
   @@unique([tenantId, sku])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, stock])
 }
 
 model Order {
@@ -91,6 +96,10 @@ model Order {
   contactId String?
   contact   Contact?    @relation(fields: [contactId], references: [id])
   jobs      Job[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([contactId])
 }
 
 model OrderItem {
@@ -124,6 +133,11 @@ model Contact {
   holds         Hold[]
   tasks         Task[]
   tags          Tag[]
+
+  @@index([tenantId, stage])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, email])
+  @@index([tenantId, score])
 }
 
 model Task {
@@ -136,7 +150,7 @@ model Task {
 
   contactId   String?
   contact     Contact? @relation(fields: [contactId], references: [id])
-  
+
   assignedToId String?
   assignedTo   User?    @relation(fields: [assignedToId], references: [id])
 
@@ -145,6 +159,11 @@ model Task {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([assignedToId, status])
+  @@index([contactId])
 }
 
 model Tag {
@@ -173,6 +192,9 @@ model Campaign {
   tenant      Tenant   @relation(fields: [tenantId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
 }
 
 // Finance
@@ -187,6 +209,10 @@ model Transaction {
   tenant      Tenant   @relation(fields: [tenantId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, type])
+  @@index([tenantId, category])
 }
 
 // CRM - Pipelines
@@ -198,6 +224,8 @@ model Pipeline {
   stages    PipelineStage[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+
+  @@index([tenantId])
 }
 
 model PipelineStage {
@@ -224,6 +252,11 @@ model Opportunity {
   tenant    Tenant        @relation(fields: [tenantId], references: [id])
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([contactId])
+  @@index([stageId])
 }
 
 // ERP - Advanced Inventory
@@ -243,6 +276,10 @@ model Slab {
   updatedAt    DateTime @updatedAt
 
   holds Hold[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, productId])
+  @@index([productId, status])
 }
 
 // ERP - Holds & Allocations
@@ -265,6 +302,11 @@ model Hold {
   createdBy String? // User who created the hold
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, expiresAt])
+  @@index([slabId])
+  @@index([contactId])
 }
 
 // ERP - Quoting
@@ -283,6 +325,10 @@ model Quote {
   updatedAt    DateTime  @updatedAt
 
   items QuoteItem[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([contactId])
 }
 
 model QuoteItem {
@@ -310,6 +356,9 @@ model Conversation {
   updatedAt     DateTime @updatedAt
 
   messages Message[]
+
+  @@index([tenantId, lastMessageAt])
+  @@index([contactId])
 }
 
 model Message {
@@ -337,6 +386,10 @@ model Job {
   updatedAt DateTime  @updatedAt
 
   stages JobStage[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([orderId])
 }
 
 model JobStage {
@@ -374,6 +427,11 @@ model Appointment {
   status     String   @default("SCHEDULED") // SCHEDULED, CANCELLED, COMPLETED
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, startTime])
+  @@index([tenantId, status])
+  @@index([contactId])
+  @@index([calendarId])
 }
 
 // Automation Workflows
@@ -390,6 +448,9 @@ model Workflow {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId, isActive])
+  @@index([tenantId, createdAt])
 }
 
 model WorkflowTrigger {
@@ -437,6 +498,8 @@ model Form {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+  @@index([tenantId, createdAt])
 }
 
 model FormField {
@@ -464,6 +527,9 @@ model FormSubmission {
   data      Json // Submitted field values
   contactId String? // Created/updated contact
   createdAt DateTime @default(now())
+
+  @@index([formId, createdAt])
+  @@index([contactId])
 }
 
 model Funnel {
@@ -481,6 +547,8 @@ model Funnel {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+  @@index([tenantId, createdAt])
 }
 
 model FunnelPage {
@@ -518,6 +586,9 @@ model Supplier {
   purchaseOrders PurchaseOrder[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+
+  @@index([tenantId, name])
+  @@index([tenantId, createdAt])
 }
 
 model PurchaseOrder {
@@ -537,6 +608,11 @@ model PurchaseOrder {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([supplierId])
+  @@index([containerId])
 }
 
 model PurchaseOrderItem {
@@ -577,4 +653,8 @@ model Container {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, eta])
 }
