@@ -2,8 +2,11 @@
 
 import { prisma } from './prisma';
 import { convertDecimalToNumber } from './decimal-utils';
+import { requireAuth } from './auth-helpers';
 
-export async function getDashboardStats(tenantId: string) {
+export async function getDashboardStats() {
+    const { tenantId } = await requireAuth();
+
     const [
         totalRevenue,
         activeOrders,
