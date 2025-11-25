@@ -4,6 +4,8 @@ import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
 import { triggerFormSubmitted } from './workflow-triggers';
 import { requireAuth, validateTenantAccess } from './auth-helpers';
+import { rateLimiter, RATE_LIMITS } from './rate-limiter';
+import { headers } from 'next/headers';
 
 // ============= FORM CRUD =============
 
@@ -244,6 +246,25 @@ export async function toggleFormStatus(formId: string, isActive: boolean) {
 // PUBLIC: This function is called from public form pages (/f/[slug])
 // NO AUTH - but validates form exists and creates data in correct tenant
 export async function submitForm(formId: string, formData: Record<string, any>) {
+    // Rate limiting by IP to prevent spam
+    const headersList = headers();
+    const forwardedFor = headersList.get('x-forwarded-for');
+    const realIp = headersList.get('x-real-ip');
+    const clientIP = forwardedFor?.split(',')[0].trim() || realIp || 'unknown';
+
+    const ipIdentifier = `form:ip:${clientIP}`;
+    const ipRateLimit = rateLimiter.check(
+        ipIdentifier,
+        RATE_LIMITS.FORM_SUBMISSION.limit,
+        RATE_LIMITS.FORM_SUBMISSION.windowMs
+    );
+
+    if (!ipRateLimit.allowed) {
+        throw new Error(
+            `Muitas submissões. Tente novamente em ${ipRateLimit.retryAfter} segundos.`
+        );
+    }
+
     // Get form with fields - validates form exists
     const form = await prisma.form.findUnique({
         where: { id: formId },
@@ -258,6 +279,20 @@ export async function submitForm(formId: string, formData: Record<string, any>) 
 
     if (!form.isActive) {
         throw new Error('Form is not active');
+    }
+
+    // Additional rate limit per form to prevent targeting specific forms
+    const formIdentifier = `form:${formId}:ip:${clientIP}`;
+    const formRateLimit = rateLimiter.check(
+        formIdentifier,
+        Math.ceil(RATE_LIMITS.FORM_SUBMISSION.limit / 2), // Half the global limit per form
+        RATE_LIMITS.FORM_SUBMISSION.windowMs
+    );
+
+    if (!formRateLimit.allowed) {
+        throw new Error(
+            `Muitas submissões para este formulário. Tente novamente em ${formRateLimit.retryAfter} segundos.`
+        );
     }
 
     // Extract contact mapping fields
