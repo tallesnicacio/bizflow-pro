@@ -2,37 +2,45 @@
 
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
+import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
 export async function createContact(data: {
     name: string;
     email: string;
     phone?: string;
     stage?: string;
-    tenantId: string;
 }) {
-    try {
-        const contact = await prisma.contact.create({
-            data: {
-                name: data.name,
-                email: data.email,
-                phone: data.phone,
-                stage: data.stage || 'LEAD',
-                tenantId: data.tenantId,
-            },
-        });
+    const { tenantId } = await requireAuth();
 
-        revalidatePath('/crm');
-        return contact;
-    } catch (error) {
-        console.error('Failed to create contact:', error);
-        throw new Error('Failed to create contact');
-    }
+    const contact = await prisma.contact.create({
+        data: {
+            name: data.name,
+            email: data.email,
+            phone: data.phone,
+            stage: data.stage || 'LEAD',
+            tenantId,
+        },
+    });
+
+    revalidatePath('/crm');
+    return contact;
 }
 
-export async function getContacts(tenantId: string) {
-    try {
-        const contacts = await prisma.contact.findMany({
-            where: { tenantId },
+export async function getContacts(paginationParams?: PaginationParams) {
+    const { tenantId } = await requireAuth();
+
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [contacts, total] = await Promise.all([
+        prisma.contact.findMany({
+            where,
             orderBy: {
                 createdAt: 'desc',
             },
@@ -41,12 +49,13 @@ export async function getContacts(tenantId: string) {
                     select: { orders: true },
                 },
             },
-        });
-        return contacts;
-    } catch (error) {
-        console.error('Failed to get contacts:', error);
-        throw new Error('Failed to get contacts');
-    }
+            skip,
+            take,
+        }),
+        prisma.contact.count({ where }),
+    ]);
+
+    return createPaginatedResponse(contacts, total, page, limit);
 }
 
 export async function updateContact(id: string, data: {
@@ -55,16 +64,25 @@ export async function updateContact(id: string, data: {
     phone?: string;
     stage?: string;
 }) {
-    try {
-        const contact = await prisma.contact.update({
-            where: { id },
-            data,
-        });
+    const { tenantId } = await requireAuth();
 
-        revalidatePath('/crm');
-        return contact;
-    } catch (error) {
-        console.error('Failed to update contact:', error);
-        throw new Error('Failed to update contact');
+    // First verify the contact belongs to this tenant
+    const existingContact = await prisma.contact.findUnique({
+        where: { id },
+        select: { tenantId: true },
+    });
+
+    if (!existingContact) {
+        throw new Error('Contact not found');
     }
+
+    validateTenantAccess(existingContact.tenantId, tenantId);
+
+    const contact = await prisma.contact.update({
+        where: { id },
+        data,
+    });
+
+    revalidatePath('/crm');
+    return contact;
 }

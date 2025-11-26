@@ -2,21 +2,34 @@
 
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
+import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getAppointments(tenantId: string) {
-    try {
-        const appointments = await prisma.appointment.findMany({
-            where: { tenantId },
+export async function getAppointments(paginationParams?: PaginationParams) {
+    const { tenantId } = await requireAuth();
+
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [appointments, total] = await Promise.all([
+        prisma.appointment.findMany({
+            where,
             include: {
                 contact: true,
             },
             orderBy: { startTime: 'asc' },
-        });
-        return appointments;
-    } catch (error) {
-        console.error('Failed to get appointments:', error);
-        throw new Error('Failed to get appointments');
-    }
+            skip,
+            take,
+        }),
+        prisma.appointment.count({ where }),
+    ]);
+
+    return createPaginatedResponse(appointments, total, page, limit);
 }
 
 export async function createAppointment(data: {
@@ -24,31 +37,41 @@ export async function createAppointment(data: {
     startTime: Date;
     endTime: Date;
     contactId?: string;
-    tenantId: string;
 }) {
-    try {
-        // Ensure a default calendar exists
-        let calendar = await prisma.calendar.findFirst({ where: { tenantId: data.tenantId } });
-        if (!calendar) {
-            calendar = await prisma.calendar.create({
-                data: { name: 'Main Calendar', tenantId: data.tenantId },
-            });
+    const { tenantId } = await requireAuth();
+
+    // Validate contact belongs to tenant if provided
+    if (data.contactId) {
+        const contact = await prisma.contact.findUnique({
+            where: { id: data.contactId },
+            select: { tenantId: true },
+        });
+
+        if (!contact) {
+            throw new Error('Contact not found');
         }
 
-        const appointment = await prisma.appointment.create({
-            data: {
-                title: data.title,
-                startTime: data.startTime,
-                endTime: data.endTime,
-                contactId: data.contactId,
-                calendarId: calendar.id,
-                tenantId: data.tenantId,
-            },
-        });
-        revalidatePath('/crm/calendar');
-        return appointment;
-    } catch (error) {
-        console.error('Failed to create appointment:', error);
-        throw new Error('Failed to create appointment');
+        validateTenantAccess(contact.tenantId, tenantId);
     }
+
+    // Ensure a default calendar exists
+    let calendar = await prisma.calendar.findFirst({ where: { tenantId } });
+    if (!calendar) {
+        calendar = await prisma.calendar.create({
+            data: { name: 'Main Calendar', tenantId },
+        });
+    }
+
+    const appointment = await prisma.appointment.create({
+        data: {
+            title: data.title,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            contactId: data.contactId,
+            calendarId: calendar.id,
+            tenantId,
+        },
+    });
+    revalidatePath('/crm/calendar');
+    return appointment;
 }

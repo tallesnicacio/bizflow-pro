@@ -2,11 +2,23 @@
 
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
+import { requireAuth, validateTenantAccess } from './auth-helpers';
+import {
+    PaginationParams,
+    preparePagination,
+    createPaginatedResponse
+} from './pagination-utils';
 
-export async function getConversations(tenantId: string) {
-    try {
-        const conversations = await prisma.conversation.findMany({
-            where: { tenantId },
+export async function getConversations(paginationParams?: PaginationParams) {
+    const { tenantId } = await requireAuth();
+
+    const { page, limit, skip, take } = preparePagination(paginationParams);
+
+    const where = { tenantId };
+
+    const [conversations, total] = await Promise.all([
+        prisma.conversation.findMany({
+            where,
             orderBy: { lastMessageAt: 'desc' },
             include: {
                 contact: true,
@@ -15,30 +27,35 @@ export async function getConversations(tenantId: string) {
                     take: 1,
                 },
             },
-        });
-        return conversations;
-    } catch (error) {
-        console.error('Failed to get conversations:', error);
-        throw new Error('Failed to get conversations');
-    }
+            skip,
+            take,
+        }),
+        prisma.conversation.count({ where }),
+    ]);
+
+    return createPaginatedResponse(conversations, total, page, limit);
 }
 
 export async function getConversation(conversationId: string) {
-    try {
-        const conversation = await prisma.conversation.findUnique({
-            where: { id: conversationId },
-            include: {
-                contact: true,
-                messages: {
-                    orderBy: { createdAt: 'asc' },
-                },
+    const { tenantId } = await requireAuth();
+
+    const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+            contact: true,
+            messages: {
+                orderBy: { createdAt: 'asc' },
             },
-        });
-        return conversation;
-    } catch (error) {
-        console.error('Failed to get conversation:', error);
-        throw new Error('Failed to get conversation');
+        },
+    });
+
+    if (!conversation) {
+        throw new Error('Conversation not found');
     }
+
+    validateTenantAccess(conversation.tenantId, tenantId);
+
+    return conversation;
 }
 
 export async function sendMessage(data: {
@@ -46,55 +63,79 @@ export async function sendMessage(data: {
     contactId?: string;
     content: string;
     channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
-    tenantId: string;
 }) {
-    try {
-        let conversationId = data.conversationId;
+    const { tenantId } = await requireAuth();
 
-        // Create conversation if it doesn't exist
-        if (!conversationId && data.contactId) {
-            const existing = await prisma.conversation.findFirst({
-                where: {
-                    contactId: data.contactId,
-                    channel: data.channel,
-                    tenantId: data.tenantId,
-                },
-            });
+    let conversationId = data.conversationId;
 
-            if (existing) {
-                conversationId = existing.id;
-            } else {
-                const newConv = await prisma.conversation.create({
-                    data: {
-                        contactId: data.contactId,
-                        channel: data.channel,
-                        tenantId: data.tenantId,
-                    },
-                });
-                conversationId = newConv.id;
-            }
+    // Validate conversation belongs to tenant if provided
+    if (conversationId) {
+        const conv = await prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: { tenantId: true },
+        });
+
+        if (!conv) {
+            throw new Error('Conversation not found');
         }
 
-        if (!conversationId) throw new Error('Conversation ID or Contact ID required');
+        validateTenantAccess(conv.tenantId, tenantId);
+    }
 
-        const message = await prisma.message.create({
-            data: {
-                conversationId,
-                content: data.content,
-                direction: 'OUTBOUND',
-                status: 'SENT',
+    // Validate contact belongs to tenant if provided
+    if (data.contactId) {
+        const contact = await prisma.contact.findUnique({
+            where: { id: data.contactId },
+            select: { tenantId: true },
+        });
+
+        if (!contact) {
+            throw new Error('Contact not found');
+        }
+
+        validateTenantAccess(contact.tenantId, tenantId);
+    }
+
+    // Create conversation if it doesn't exist
+    if (!conversationId && data.contactId) {
+        const existing = await prisma.conversation.findFirst({
+            where: {
+                contactId: data.contactId,
+                channel: data.channel,
+                tenantId,
             },
         });
 
-        await prisma.conversation.update({
-            where: { id: conversationId },
-            data: { lastMessageAt: new Date() },
-        });
-
-        revalidatePath('/crm/conversations');
-        return message;
-    } catch (error) {
-        console.error('Failed to send message:', error);
-        throw new Error('Failed to send message');
+        if (existing) {
+            conversationId = existing.id;
+        } else {
+            const newConv = await prisma.conversation.create({
+                data: {
+                    contactId: data.contactId,
+                    channel: data.channel,
+                    tenantId,
+                },
+            });
+            conversationId = newConv.id;
+        }
     }
+
+    if (!conversationId) throw new Error('Conversation ID or Contact ID required');
+
+    const message = await prisma.message.create({
+        data: {
+            conversationId,
+            content: data.content,
+            direction: 'OUTBOUND',
+            status: 'SENT',
+        },
+    });
+
+    await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageAt: new Date() },
+    });
+
+    revalidatePath('/crm/conversations');
+    return message;
 }

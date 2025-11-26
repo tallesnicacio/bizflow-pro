@@ -1,4 +1,5 @@
 import twilio from 'twilio';
+import { logger } from '../logger';
 
 const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -13,8 +14,7 @@ if (ACCOUNT_SID && AUTH_TOKEN) {
 export const smsService = {
     async sendSms(to: string, body: string) {
         if (!client || !FROM_NUMBER) {
-            console.log(`[SMS Service] Simulation Mode: Sending SMS to ${to}`);
-            console.log(`Message: ${body}`);
+            logger.info('[SMS Service] Simulation Mode: SMS not sent (no credentials configured)');
             return { success: true, simulated: true };
         }
 
@@ -24,10 +24,10 @@ export const smsService = {
                 from: FROM_NUMBER,
                 to,
             });
-            console.log(`[SMS Service] SMS sent to ${to}`);
+            logger.info('[SMS Service] SMS sent successfully');
             return { success: true, simulated: false };
         } catch (error) {
-            console.error('[SMS Service] Error sending SMS:', error);
+            logger.error('[SMS Service] Failed to send SMS', error);
             return { success: false, error };
         }
     }

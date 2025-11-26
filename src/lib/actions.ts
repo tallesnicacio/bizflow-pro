@@ -2,6 +2,7 @@
 
 import { prisma } from './prisma';
 import { revalidatePath } from 'next/cache';
+import { logger } from './logger';
 
 // Type definition for Order Input
 interface CreateOrderInput {
@@ -111,12 +112,12 @@ export async function createOrder(data: CreateOrderInput) {
 
 async function checkTriggers(contactId: string, orderId: string) {
     // Mock Automation Engine
-    console.log(`[Automation] Checking triggers for Contact ${contactId} after Order ${orderId}...`);
+    logger.debug('Checking automation triggers after order');
 
     // Example Rule: If Score > 50, Send "VIP Welcome" Email
     const contact = await prisma.contact.findUnique({ where: { id: contactId } });
     if (contact && contact.score > 50) {
-        console.log(`[Automation] TRIGGERED: Send VIP Email to ${contact.email}`);
+        logger.debug('Automation triggered: VIP welcome email');
         // await sendEmail(...)
     }
 }

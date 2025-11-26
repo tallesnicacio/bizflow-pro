@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from './prisma';
+import { logger } from './logger';
 
 // Type definitions for workflow context
 export interface WorkflowContext {
@@ -47,7 +48,7 @@ export async function findMatchingWorkflows(event: TriggerEvent) {
 
         return matchingWorkflows;
     } catch (error) {
-        console.error('Error finding matching workflows:', error);
+        logger.error('Error finding matching workflows', error);
         return [];
     }
 }
@@ -77,7 +78,7 @@ function evaluateTriggerConditions(config: any, eventData: any): boolean {
  */
 export async function executeWorkflow(workflowId: string, context: WorkflowContext) {
     try {
-        console.log(`[Workflow Engine] Executing workflow: ${workflowId}`);
+        logger.workflow(`Executing workflow: ${workflowId}`);
 
         const workflow = await prisma.workflow.findUnique({
             where: { id: workflowId },
@@ -94,7 +95,7 @@ export async function executeWorkflow(workflowId: string, context: WorkflowConte
         }
 
         if (!workflow.isActive) {
-            console.log(`[Workflow Engine] Workflow ${workflowId} is inactive, skipping`);
+            logger.workflow(`Workflow ${workflowId} is inactive, skipping`);
             return { success: false, reason: 'Workflow is inactive' };
         }
 
@@ -105,15 +106,15 @@ export async function executeWorkflow(workflowId: string, context: WorkflowConte
                 const result = await executeAction(action, context);
                 results.push({ actionId: action.id, success: true, result });
             } catch (error: any) {
-                console.error(`[Workflow Engine] Action ${action.id} failed:`, error);
+                logger.error(`Workflow action ${action.id} failed`, error);
                 results.push({ actionId: action.id, success: false, error: error.message });
             }
         }
 
-        console.log(`[Workflow Engine] Workflow ${workflowId} completed`);
+        logger.workflow(`Workflow ${workflowId} completed`);
         return { success: true, results };
     } catch (error: any) {
-        console.error('[Workflow Engine] Workflow execution failed:', error);
+        logger.error('Workflow execution failed', error);
         return { success: false, error: error.message };
     }
 }
@@ -125,7 +126,7 @@ import { smsService } from './services/sms-service';
  * Execute a single workflow action
  */
 async function executeAction(action: any, context: any) {
-    console.log(`[Workflow] Executing action: ${action.type}`, action.config);
+    logger.workflow(`Executing action: ${action.type}`);
 
     try {
         switch (action.type) {
@@ -157,7 +158,7 @@ async function executeAction(action: any, context: any) {
                             assignedToId: action.config.assignedTo
                         }
                     });
-                    console.log('[Task] Task created:', action.config.title);
+                    logger.workflow('Task created successfully');
                 }
                 break;
 
@@ -185,20 +186,20 @@ async function executeAction(action: any, context: any) {
                             }
                         }
                     });
-                    console.log('[Contact] Tag added:', action.config.tag);
+                    logger.workflow('Tag added to contact');
                 }
                 break;
 
             case 'UPDATE_FIELD':
                 // TODO: Implement dynamic field updates
                 // This requires careful validation to prevent security issues
-                console.log('[Contact] Field updated');
+                logger.workflow('Contact field updated');
                 break;
             default:
                 throw new Error(`Unknown action type: ${action.type}`);
         }
     } catch (error) {
-        console.error(`[Workflow] Action failed: ${action.type}`, error);
+        logger.error(`Workflow action failed: ${action.type}`, error);
         throw error; // Re-throw to be caught by executeWorkflow's try/catch
     }
 }
@@ -210,23 +211,20 @@ async function executeAction(action: any, context: any) {
 async function executeSendEmail(config: any, context: WorkflowContext) {
     const { to, subject, body } = config;
 
-    // Simulate email sending (replace with actual email service)
-    console.log(`[Email] Sending email to: ${to}`);
-    console.log(`[Email] Subject: ${subject}`);
-    console.log(`[Email] Body: ${body}`);
+    // Security: Do not log email addresses or content
+    logger.workflow('Executing send email action');
 
     // TODO: Integrate with SendGrid, Resend, or AWS SES
     // await emailService.send({ to, subject, body });
 
-    return { sent: true, to, subject };
+    return { sent: true };
 }
 
 async function executeSendSMS(config: any, context: WorkflowContext) {
     const { to, message } = config;
 
-    // Simulate SMS sending (replace with actual SMS service)
-    console.log(`[SMS] Sending SMS to: ${to}`);
-    console.log(`[SMS] Message: ${message}`);
+    // Security: Do not log phone numbers or message content
+    logger.workflow('Executing send SMS action');
 
     // TODO: Integrate with Twilio
     // await twilioClient.messages.create({ to, body: message });
@@ -237,14 +235,14 @@ async function executeSendSMS(config: any, context: WorkflowContext) {
 async function executeCreateTask(config: any, context: WorkflowContext) {
     const { title, description, assignedTo } = config;
 
-    console.log(`[Task] Creating task: ${title}`);
+    logger.workflow('Creating task');
 
     // TODO: Implement task creation in database
     // const task = await prisma.task.create({
     //   data: { title, description, assignedTo, tenantId: context.tenantId }
     // });
 
-    return { created: true, title };
+    return { created: true };
 }
 
 async function executeAddTag(config: any, context: WorkflowContext) {
@@ -254,7 +252,7 @@ async function executeAddTag(config: any, context: WorkflowContext) {
         throw new Error('Contact ID required for ADD_TAG action');
     }
 
-    console.log(`[Tag] Adding tag "${tag}" to contact ${context.contactId}`);
+    logger.workflow('Adding tag to contact');
 
     // TODO: Implement tag system in database
     // await prisma.contact.update({
@@ -262,18 +260,18 @@ async function executeAddTag(config: any, context: WorkflowContext) {
     //   data: { tags: { push: tag } }
     // });
 
-    return { added: true, tag, contactId: context.contactId };
+    return { added: true };
 }
 
 async function executeUpdateField(config: any, context: WorkflowContext) {
     const { model, field, value } = config;
 
-    console.log(`[Update] Updating ${model}.${field} to ${value}`);
+    logger.workflow('Updating field');
 
     // TODO: Implement dynamic field updates
     // This requires careful validation to prevent security issues
 
-    return { updated: true, model, field, value };
+    return { updated: true };
 }
 
 /**
@@ -283,7 +281,7 @@ export async function processTriggerEvent(event: TriggerEvent) {
     try {
         const workflows = await findMatchingWorkflows(event);
 
-        console.log(`[Workflow Engine] Found ${workflows.length} matching workflows for event: ${event.type}`);
+        logger.workflow(`Found ${workflows.length} matching workflows for event: ${event.type}`);
 
         const results = [];
         for (const workflow of workflows) {
@@ -298,7 +296,7 @@ export async function processTriggerEvent(event: TriggerEvent) {
 
         return { success: true, processedWorkflows: results.length, results };
     } catch (error: any) {
-        console.error('[Workflow Engine] Error processing trigger event:', error);
+        logger.error('Error processing trigger event', error);
         return { success: false, error: error.message };
     }
 }
