@@ -41,6 +41,8 @@ model Tenant {
   containers     Container[]
   tasks          Task[]
   tags           Tag[]
+  emailDomains   EmailDomain[]
+  webhooks       Webhook[]
 }
 
 model User {
@@ -219,9 +221,15 @@ model Transaction {
 model Pipeline {
   id        String          @id @default(cuid())
   name      String
+  stages    PipelineStage[]
+  automationRules AutomationRule[]
+  
+  publicFormEnabled Boolean @default(false)
+  publicFormSlug    String? @unique
+
   tenantId  String
   tenant    Tenant          @relation(fields: [tenantId], references: [id])
-  stages    PipelineStage[]
+
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
@@ -232,11 +240,68 @@ model PipelineStage {
   id            String        @id @default(cuid())
   name          String
   order         Int
+  color         String        @default("#94a3b8") // Default gray
   pipelineId    String
   pipeline      Pipeline      @relation(fields: [pipelineId], references: [id])
   opportunities Opportunity[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+
+  fields        StageField[]
+}
+
+model StageField {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // SHORT_TEXT, LONG_TEXT, NUMBER, CURRENCY, DATE, SELECT, etc.
+  required    Boolean  @default(false)
+  options     String?  // JSON string for SELECT/RADIO options
+  order       Int
+  
+  showInForm  Boolean  @default(false)
+  formLabel   String?
+  
+  stageId     String
+  stage       PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  
+  values      OpportunityFieldValue[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OpportunityFieldValue {
+  id            String      @id @default(cuid())
+  value         String      // Stored as string, parsed based on field.type
+  
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  
+  fieldId       String
+  field         StageField  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([opportunityId, fieldId])
+}
+
+model AutomationRule {
+  id            String   @id @default(cuid())
+  name          String
+  active        Boolean  @default(true)
+  
+  pipelineId    String
+  pipeline      Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  triggerType   String   // STAGE_ENTER, CARD_CREATED
+  triggerConfig String   // JSON string: { stageId: "..." }
+  
+  actionType    String   // SEND_EMAIL, CREATE_TASK
+  actionConfig  String   // JSON string: { templateId: "...", subject: "..." }
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Opportunity {
@@ -250,6 +315,13 @@ model Opportunity {
   stage     PipelineStage @relation(fields: [stageId], references: [id])
   tenantId  String
   tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  
+  fieldValues OpportunityFieldValue[]
+  
+  // AI Features
+  aiScore     Int?      // 0-100
+  aiSummary   String?   // Brief summary
+
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -657,4 +729,44 @@ model Container {
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([tenantId, eta])
+}
+
+// Email Domains for Custom Sending
+model EmailDomain {
+  id       String  @id @default(cuid())
+  domain   String  // e.g. "yourcompany.com"
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id])
+
+  // Verification Status
+  isVerified Boolean @default(false)
+  status     String  @default("PENDING") // PENDING, VERIFIED, FAILED
+
+  // DNS Records (from Resend)
+  dkimRecord String? // DKIM TXT record
+  spfRecord  String? // SPF TXT record
+  dmarcRecord String? // DMARC TXT record
+
+  // Resend Domain ID
+  resendDomainId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, domain])
+}
+
+// Webhooks
+model Webhook {
+  id        String   @id @default(cuid())
+  url       String
+  events    String   // Comma-separated list of events (e.g. "opportunity.created,stage.changed")
+  isActive  Boolean  @default(true)
+  secret    String?  // For signature verification
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -13,6 +13,8 @@ BizFlow Pro combina funcionalidades avançadas de CRM (inspiradas no GoHighLevel
 - **Unified Conversations** - Inbox centralizado para Email/SMS
 - **Calendars & Appointments** - Sistema de agendamento
 - **Automation Workflows** - Automações "If This Then That" com builder visual
+- **Public Forms** - Formulários de captura de leads integrados ao pipeline
+- **Custom Fields** - Campos personalizados (Texto, Data, Arquivo, Tags, etc.)
 
 #### ERP para Pedras Naturais (Stone Profits-inspired)
 - **Advanced Inventory** - Gestão hierárquica (Blocks → Bundles → Slabs)
@@ -26,8 +28,8 @@ BizFlow Pro combina funcionalidades avançadas de CRM (inspiradas no GoHighLevel
 - **Dashboard** - Estatísticas em tempo real
 
 ### 🚧 Em Desenvolvimento
-- Funnels & Forms
-- Holds & Allocations
+- List View & Advanced Filters
+- AI Features (Lead Scoring)
 - Purchasing & Container Management
 
 ## 🛠️ Tech Stack
@@ -182,7 +184,7 @@ Este projeto é privado e proprietário.
 
 ---
 
-**Status**: ✅ Phase 4 Complete - Automation Workflows implementado e testado
+**Status**: ✅ Phase 16 Complete - Public Forms, Automations & CRM Enhancements
 
 **Build**: ✅ Passing
 

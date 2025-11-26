@@ -1,278 +1,170 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { getFormBySlug, submitForm } from '@/lib/form-actions';
+import { getPublicForm, submitPublicForm } from '@/lib/form-actions';
+import { CheckCircle, AlertCircle } from 'lucide-react';
 
-const TENANT_ID = 'demo-tenant-1';
-
-export default function PublicFormPage() {
-    const params = useParams();
-    const slug = params?.slug as string;
-
+export default function PublicFormPage({ params }: { params: { slug: string } }) {
     const [form, setForm] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-    const [submitted, setSubmitted] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSuccess, setIsSuccess] = useState(false);
+    const [error, setError] = useState('');
     const [formData, setFormData] = useState<Record<string, any>>({});
 
     useEffect(() => {
-        if (slug) {
-            loadForm();
-        }
-    }, [slug]);
+        loadForm();
+    }, [params.slug]);
 
     async function loadForm() {
         try {
-            const data = await getFormBySlug(TENANT_ID, slug);
-            if (data) {
-                setForm(data);
-                // Initialize form data
-                const initialData: Record<string, any> = {};
-                data.fields.forEach((field: any) => {
-                    initialData[field.id] = field.type === 'CHECKBOX' ? [] : '';
-                });
-                setFormData(initialData);
-            }
-        } catch (error) {
-            console.error('Failed to load form:', error);
-            setError('Formulário não encontrado');
+            const data = await getPublicForm(params.slug);
+            setForm(data);
+        } catch (err) {
+            console.error(err);
         } finally {
-            setLoading(false);
-        }
-    }
-
-    function handleFieldChange(fieldId: string, value: any, type: string) {
-        if (type === 'CHECKBOX') {
-            // Handle checkbox arrays
-            const currentValues = formData[fieldId] || [];
-            if (currentValues.includes(value)) {
-                setFormData({
-                    ...formData,
-                    [fieldId]: currentValues.filter((v: string) => v !== value),
-                });
-            } else {
-                setFormData({
-                    ...formData,
-                    [fieldId]: [...currentValues, value],
-                });
-            }
-        } else {
-            setFormData({
-                ...formData,
-                [fieldId]: value,
-            });
+            setIsLoading(false);
         }
     }
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
-        setError(null);
+        setIsSubmitting(true);
+        setError('');
 
-        // Validate required fields
-        for (const field of form.fields) {
-            if (field.required) {
-                const value = formData[field.id];
-                if (!value || (Array.isArray(value) && value.length === 0)) {
-                    setError(`O campo "${field.label}" é obrigatório`);
-                    return;
-                }
-            }
-        }
-
-        setSubmitting(true);
         try {
-            const result = await submitForm(form.id, formData);
-
-            if (result.redirectUrl) {
-                window.location.href = result.redirectUrl;
+            const result = await submitPublicForm(params.slug, formData);
+            if (result.success) {
+                setIsSuccess(true);
+                setFormData({});
             } else {
-                setSubmitted(true);
+                setError(result.error || 'Failed to submit form');
             }
-        } catch (error: any) {
-            console.error('Failed to submit form:', error);
-            setError(error.message || 'Erro ao enviar formulário');
+        } catch (err) {
+            setError('An unexpected error occurred');
         } finally {
-            setSubmitting(false);
+            setIsSubmitting(false);
         }
     }
 
-    if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <div className="text-center">Carregando...</div>
-            </div>
-        );
+    function handleInputChange(key: string, value: any) {
+        setFormData(prev => ({ ...prev, [key]: value }));
     }
 
-    if (!form || !form.isActive) {
+    if (isLoading) {
+        return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading...</div>;
+    }
+
+    if (!form) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="text-center">
-                    <h1 className="text-2xl font-bold mb-2">Formulário não encontrado</h1>
-                    <p className="text-muted-foreground">Este formulário não existe ou está inativo.</p>
+                    <h1 className="text-2xl font-bold text-gray-900">Form Not Found</h1>
+                    <p className="text-gray-500 mt-2">This form does not exist or has been disabled.</p>
                 </div>
             </div>
         );
     }
 
-    if (submitted) {
+    if (isSuccess) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <div className="max-w-md mx-auto text-center p-8">
-                    <div className="text-6xl mb-4">✓</div>
-                    <h1 className="text-2xl font-bold mb-4">Enviado com sucesso!</h1>
-                    <p className="text-muted-foreground">{form.successMessage}</p>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+                <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
+                    <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle size={32} />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Submission Received!</h2>
+                    <p className="text-gray-600 mb-6">Thank you for contacting us. We will get back to you shortly.</p>
+                    <button
+                        onClick={() => setIsSuccess(false)}
+                        className="text-primary hover:underline"
+                    >
+                        Submit another response
+                    </button>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-background py-12 px-4">
-            <div className="max-w-xl mx-auto">
-                <div className="bg-card border border-border rounded-lg p-8 shadow-lg">
-                    <h1 className="text-2xl font-bold mb-6">{form.name}</h1>
+        <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
+                <div className="bg-primary px-6 py-4">
+                    <h1 className="text-xl font-bold text-primary-foreground">{form.pipelineName}</h1>
+                    <p className="text-primary-foreground/80 text-sm">Contact Form</p>
+                </div>
 
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
                     {error && (
-                        <div className="mb-6 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive">
+                        <div className="p-3 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 text-sm">
+                            <AlertCircle size={16} />
                             {error}
                         </div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        {form.fields.map((field: any) => (
-                            <div key={field.id}>
-                                <label className="block text-sm font-medium mb-2">
-                                    {field.label}
-                                    {field.required && <span className="text-destructive ml-1">*</span>}
-                                </label>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Name / Title <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            required
+                            type="text"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            value={formData.title || ''}
+                            onChange={e => handleInputChange('title', e.target.value)}
+                            placeholder="Your Name or Subject"
+                        />
+                    </div>
 
-                                {field.type === 'TEXT' && (
-                                    <input
-                                        type="text"
-                                        placeholder={field.placeholder}
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    />
-                                )}
+                    {form.stage.fields.map((field: any) => (
+                        <div key={field.id}>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                {field.formLabel || field.name}
+                                {field.required && <span className="text-red-500 ml-1">*</span>}
+                            </label>
 
-                                {field.type === 'EMAIL' && (
-                                    <input
-                                        type="email"
-                                        placeholder={field.placeholder}
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    />
-                                )}
+                            {field.type === 'LONG_TEXT' ? (
+                                <textarea
+                                    required={field.required}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px]"
+                                    value={formData[field.id] || ''}
+                                    onChange={e => handleInputChange(field.id, e.target.value)}
+                                />
+                            ) : field.type === 'SELECT' || field.type === 'RADIO' ? (
+                                <select
+                                    required={field.required}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    value={formData[field.id] || ''}
+                                    onChange={e => handleInputChange(field.id, e.target.value)}
+                                >
+                                    <option value="">Select...</option>
+                                    {/* Parse options if available */}
+                                    {/* Simplified for now, assuming options would be stored/parsed */}
+                                    <option value="Option 1">Option 1</option>
+                                    <option value="Option 2">Option 2</option>
+                                </select>
+                            ) : (
+                                <input
+                                    required={field.required}
+                                    type={field.type === 'NUMBER' || field.type === 'CURRENCY' ? 'number' : 'text'}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    value={formData[field.id] || ''}
+                                    onChange={e => handleInputChange(field.id, e.target.value)}
+                                />
+                            )}
+                        </div>
+                    ))}
 
-                                {field.type === 'PHONE' && (
-                                    <input
-                                        type="tel"
-                                        placeholder={field.placeholder}
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    />
-                                )}
-
-                                {field.type === 'TEXTAREA' && (
-                                    <textarea
-                                        placeholder={field.placeholder}
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        rows={4}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    />
-                                )}
-
-                                {field.type === 'NUMBER' && (
-                                    <input
-                                        type="number"
-                                        placeholder={field.placeholder}
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    />
-                                )}
-
-                                {field.type === 'DATE' && (
-                                    <input
-                                        type="date"
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    />
-                                )}
-
-                                {field.type === 'SELECT' && (
-                                    <select
-                                        value={formData[field.id] || ''}
-                                        onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                        className="w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary"
-                                    >
-                                        <option value="">Selecione...</option>
-                                        {(field.options || []).map((opt: string, i: number) => (
-                                            <option key={i} value={opt}>
-                                                {opt}
-                                            </option>
-                                        ))}
-                                    </select>
-                                )}
-
-                                {field.type === 'RADIO' && (
-                                    <div className="space-y-2">
-                                        {(field.options || []).map((opt: string, i: number) => (
-                                            <label key={i} className="flex items-center gap-3 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name={field.id}
-                                                    value={opt}
-                                                    checked={formData[field.id] === opt}
-                                                    onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
-                                                    className="w-4 h-4"
-                                                />
-                                                {opt}
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {field.type === 'CHECKBOX' && (
-                                    <div className="space-y-2">
-                                        {(field.options || []).map((opt: string, i: number) => (
-                                            <label key={i} className="flex items-center gap-3 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    value={opt}
-                                                    checked={(formData[field.id] || []).includes(opt)}
-                                                    onChange={() => handleFieldChange(field.id, opt, field.type)}
-                                                    className="w-4 h-4 rounded"
-                                                />
-                                                {opt}
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-
+                    <div className="pt-4">
                         <button
                             type="submit"
-                            disabled={submitting}
-                            className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            disabled={isSubmitting}
+                            className="w-full bg-primary text-primary-foreground font-medium py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-70"
                         >
-                            {submitting ? 'Enviando...' : form.submitButtonText}
+                            {isSubmitting ? 'Submitting...' : 'Submit'}
                         </button>
-                    </form>
-                </div>
-
-                <p className="text-center text-xs text-muted-foreground mt-4">
-                    Powered by BizFlow Pro
-                </p>
+                    </div>
+                </form>
             </div>
         </div>
     );

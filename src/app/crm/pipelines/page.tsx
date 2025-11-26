@@ -2,11 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Plus, MoreHorizontal, Loader2 } from 'lucide-react';
-import { getPipelines, createPipeline, createOpportunity, updateOpportunityStage } from '@/lib/crm-pipeline-actions';
+import { Plus, MoreHorizontal, Loader2, Settings, LayoutGrid, List } from 'lucide-react';
+import { getPipelines, createPipeline, createOpportunity, updateOpportunityStage } from '@/lib/pipeline-actions';
 import { getContacts } from '@/lib/crm-actions';
 import { Modal } from '@/components/Modal';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
+
+import { OpportunityDetailsModal } from '@/components/crm/OpportunityDetailsModal';
+import { PipelineListView } from '@/components/crm/PipelineListView';
 
 const TENANT_ID = 'demo-tenant-1';
 
@@ -16,6 +20,11 @@ export default function PipelinesPage() {
     const [selectedPipeline, setSelectedPipeline] = useState<any>(null);
     const [contacts, setContacts] = useState<any[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+
+    // Details Modal State
+    const [selectedOpportunity, setSelectedOpportunity] = useState<any>(null);
+    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -49,12 +58,19 @@ export default function PipelinesPage() {
         }
     }
 
+    function handleOpportunityClick(opportunity: any) {
+        setSelectedOpportunity(opportunity);
+        setIsDetailsModalOpen(true);
+    }
+
     async function handleCreateDefaultPipeline() {
         setIsLoading(true);
         try {
-            const newPipeline = await createPipeline({ name: 'Sales Pipeline', tenantId: TENANT_ID });
-            setPipelines([newPipeline]);
-            setSelectedPipeline(newPipeline);
+            const result = await createPipeline({ name: 'Sales Pipeline', tenantId: TENANT_ID });
+            if (result.success) {
+                setPipelines([result.pipeline]);
+                setSelectedPipeline(result.pipeline);
+            }
         } catch (error) {
             console.error('Failed to create pipeline', error);
         } finally {
@@ -89,7 +105,6 @@ export default function PipelinesPage() {
         const { source, destination, draggableId } = result;
 
         if (source.droppableId === destination.droppableId) {
-            // Reordering within same column (not implemented yet)
             return;
         }
 
@@ -113,7 +128,7 @@ export default function PipelinesPage() {
         setSelectedPipeline(newPipelines[pipelineIdx]);
 
         try {
-            await updateOpportunityStage(draggableId, destination.droppableId);
+            await updateOpportunityStage(draggableId, destination.droppableId, source.droppableId);
         } catch (error) {
             console.error('Failed to update stage', error);
             await loadData(); // Revert on error
@@ -150,67 +165,106 @@ export default function PipelinesPage() {
                     <h1 className="text-3xl font-bold text-foreground">Pipelines</h1>
                     <p className="text-muted-foreground">Gerencie suas oportunidades de venda</p>
                 </div>
-                <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all"
-                >
-                    <Plus size={20} />
-                    Nova Oportunidade
-                </button>
+                <div className="flex gap-3">
+                    <div className="flex bg-muted rounded-lg p-1 border border-border">
+                        <button
+                            onClick={() => setViewMode('kanban')}
+                            className={cn(
+                                "p-2 rounded-md transition-all",
+                                viewMode === 'kanban' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                            )}
+                            title="Visualização Kanban"
+                        >
+                            <LayoutGrid size={18} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={cn(
+                                "p-2 rounded-md transition-all",
+                                viewMode === 'list' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                            )}
+                            title="Visualização em Lista"
+                        >
+                            <List size={18} />
+                        </button>
+                    </div>
+                    <Link
+                        href="/crm/pipelines/settings"
+                        className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg hover:bg-accent transition-all"
+                    >
+                        <Settings size={20} />
+                        Configurações
+                    </Link>
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all"
+                    >
+                        <Plus size={20} />
+                        Nova Oportunidade
+                    </button>
+                </div>
             </header>
 
-            <DragDropContext onDragEnd={onDragEnd}>
-                <div className="flex gap-4 overflow-x-auto pb-4 h-full">
-                    {selectedPipeline?.stages.map((stage: any) => (
-                        <Droppable key={stage.id} droppableId={stage.id}>
-                            {(provided) => (
-                                <div
-                                    ref={provided.innerRef}
-                                    {...provided.droppableProps}
-                                    className="min-w-[300px] w-[300px] bg-muted/30 rounded-xl border border-border flex flex-col max-h-full"
-                                >
-                                    <div className="p-4 border-b border-border flex justify-between items-center bg-muted/50 rounded-t-xl">
-                                        <h3 className="font-semibold text-sm uppercase tracking-wider">{stage.name}</h3>
-                                        <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded-full border border-border">
-                                            {stage.opportunities.length}
-                                        </span>
-                                    </div>
-                                    <div className="p-3 flex-1 overflow-y-auto space-y-3">
-                                        {stage.opportunities.map((opportunity: any, index: number) => (
-                                            <Draggable key={opportunity.id} draggableId={opportunity.id} index={index}>
-                                                {(provided) => (
-                                                    <div
-                                                        ref={provided.innerRef}
-                                                        {...provided.draggableProps}
-                                                        {...provided.dragHandleProps}
-                                                        className="bg-background p-4 rounded-lg border border-border shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group"
-                                                    >
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <h4 className="font-medium text-sm">{opportunity.title}</h4>
-                                                            <button className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
-                                                                <MoreHorizontal size={16} />
-                                                            </button>
-                                                        </div>
-                                                        <div className="flex justify-between items-end">
-                                                            <div className="text-xs text-muted-foreground">
-                                                                {opportunity.contact?.name}
+            {viewMode === 'kanban' ? (
+                <DragDropContext onDragEnd={onDragEnd}>
+                    <div className="flex gap-4 overflow-x-auto pb-4 h-full">
+                        {selectedPipeline?.stages.map((stage: any) => (
+                            <Droppable key={stage.id} droppableId={stage.id}>
+                                {(provided) => (
+                                    <div
+                                        ref={provided.innerRef}
+                                        {...provided.droppableProps}
+                                        className="min-w-[300px] w-[300px] bg-muted/30 rounded-xl border border-border flex flex-col max-h-full"
+                                    >
+                                        <div className="p-4 border-b border-border flex justify-between items-center bg-muted/50 rounded-t-xl" style={{ borderTop: `4px solid ${stage.color || '#94a3b8'}` }}>
+                                            <h3 className="font-semibold text-sm uppercase tracking-wider">{stage.name}</h3>
+                                            <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded-full border border-border">
+                                                {stage.opportunities.length}
+                                            </span>
+                                        </div>
+                                        <div className="p-3 flex-1 overflow-y-auto space-y-3">
+                                            {stage.opportunities.map((opportunity: any, index: number) => (
+                                                <Draggable key={opportunity.id} draggableId={opportunity.id} index={index}>
+                                                    {(provided) => (
+                                                        <div
+                                                            ref={provided.innerRef}
+                                                            {...provided.draggableProps}
+                                                            {...provided.dragHandleProps}
+                                                            onClick={() => handleOpportunityClick(opportunity)}
+                                                            className="bg-background p-4 rounded-lg border border-border shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group"
+                                                        >
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <h4 className="font-medium text-sm">{opportunity.title}</h4>
+                                                                <button className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
+                                                                    <MoreHorizontal size={16} />
+                                                                </button>
                                                             </div>
-                                                            <div className="font-semibold text-sm text-primary">
-                                                                R$ {Number(opportunity.value).toFixed(2)}
+                                                            <div className="flex justify-between items-end">
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    {opportunity.contact?.name}
+                                                                </div>
+                                                                <div className="font-semibold text-sm text-primary">
+                                                                    R$ {Number(opportunity.value).toFixed(2)}
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </Draggable>
-                                        ))}
-                                        {provided.placeholder}
+                                                    )}
+                                                </Draggable>
+                                            ))}
+                                            {provided.placeholder}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                        </Droppable>
-                    ))}
-                </div>
-            </DragDropContext>
+                                )}
+                            </Droppable>
+                        ))}
+                    </div>
+                </DragDropContext>
+            ) : (
+                <PipelineListView
+                    pipeline={selectedPipeline}
+                    onOpportunityClick={handleOpportunityClick}
+                />
+            )}
 
             <Modal
                 isOpen={isModalOpen}
@@ -283,6 +337,13 @@ export default function PipelinesPage() {
                     </div>
                 </form>
             </Modal>
+
+            <OpportunityDetailsModal
+                isOpen={isDetailsModalOpen}
+                onClose={() => setIsDetailsModalOpen(false)}
+                opportunity={selectedOpportunity}
+                stageName={selectedPipeline?.stages.find((s: any) => s.id === selectedOpportunity?.stageId)?.name || ''}
+            />
         </div>
     );
 }
