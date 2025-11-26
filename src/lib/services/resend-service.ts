@@ -1,6 +1,18 @@
 import { Resend } from 'resend';
 
-export const resend = new Resend(process.env.RESEND_API_KEY || 'mock_key');
+// Lazy initialization to ensure env vars are loaded
+let resendInstance: Resend | null = null;
+
+function getResend(): Resend {
+    if (!resendInstance) {
+        const apiKey = process.env.RESEND_API_KEY;
+        if (!apiKey) {
+            console.warn('[Resend] RESEND_API_KEY not found in environment variables');
+        }
+        resendInstance = new Resend(apiKey || 'mock_key');
+    }
+    return resendInstance;
+}
 
 interface SendEmailParams {
     from: string;
@@ -21,7 +33,7 @@ export const resendService = {
                 return { success: true, simulated: true };
             }
 
-            const { data, error } = await resend.emails.send({
+            const { data, error } = await getResend().emails.send({
                 from,
                 to,
                 subject,
@@ -50,7 +62,7 @@ export const resendService = {
                 return { success: true, simulated: true };
             }
 
-            const { data, error } = await resend.batch.send(emails);
+            const { data, error } = await getResend().batch.send(emails);
 
             if (error) {
                 console.error('[Resend] Error sending bulk emails:', error);
@@ -80,7 +92,7 @@ export const resendService = {
                 };
             }
 
-            const { data, error } = await resend.domains.create({ name: domain });
+            const { data, error } = await getResend().domains.create({ name: domain });
 
             if (error) {
                 console.error('[Resend] Error adding domain:', error);
@@ -105,7 +117,7 @@ export const resendService = {
                 return { success: true, simulated: true, verified: true };
             }
 
-            const result = await resend.domains.verify(domainId);
+            const result = await getResend().domains.verify(domainId);
 
             if (result.error) {
                 console.error('[Resend] Error verifying domain:', result.error);
